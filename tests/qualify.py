@@ -31,9 +31,9 @@ def png(w=128, h=128):  # a red square on white, stdlib only
         chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
 
 
-def words(n_tokens, rng):  # ~4 chars/token of fresh pseudo-words: defeats the prefix cache
+def words(n_tokens, rng):  # fresh pseudo-words (defeat the prefix cache); ~1.94 tokens per word measured
     syl = ["ka", "ri", "to", "men", "sal", "ve", "dor", "qu", "lin", "pha", "ex", "or", "ta", "bri", "un"]
-    return " ".join("".join(rng.choice(syl) for _ in range(rng.randint(1, 3))) for _ in range(int(n_tokens * 0.62)))
+    return " ".join("".join(rng.choice(syl) for _ in range(rng.randint(1, 3))) for _ in range(int(n_tokens / 1.94)))
 
 
 h = get("/health")
@@ -56,6 +56,8 @@ for level in q["levels"]:
     for i in range(q["runs_per_level"]):
         rng = random.Random(level * 31 + i)
         r, wall = chat(words(level, rng) + "\n\nWrite a long paragraph about the history of bridges.", 100)
+        if r["usage"]["prompt_tokens"] + 100 > profile["engine_args"]["max_context"]:
+            raise SystemExit("qualification prompt exceeds the context; recalibrate words()")
         t = r.get("timings", {})
         runs.append({"level": level, "run": i, "prompt": r["usage"]["prompt_tokens"],
                      "gen": r["usage"]["completion_tokens"], "wall": round(wall, 1),

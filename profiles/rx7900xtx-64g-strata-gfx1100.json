@@ -78,7 +78,7 @@
   },
   "qualification": {
     "min_decode_tok_s_mean": 60, "min_decode_tok_s_run": 40, "min_prefill_tok_s_32k": 1200,
-    "levels": [16000, 32000, 128000], "runs_per_level": 2
+    "levels": [16000, 32000, 126000], "runs_per_level": 2
   },
   "asset_prefix": "xrig-strata-linux-amd-rx7900xtx-64g-gfx1100"
 }
