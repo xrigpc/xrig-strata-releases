@@ -1,0 +1,76 @@
+name: Publish — RX 7900 XTX 64 GB (Strata, ROCm gfx1100)
+# Signs and publishes a release whose bytes were built and qualified on the
+# XTX 64 GB test rig and uploaded as a DRAFT GitHub release (unsigned assets,
+# per-file manifests, qualification evidence). Keys exist only here, in the
+# protected production environment, exactly as in xrig-llama-server-releases.
+"on":
+  workflow_dispatch:
+    inputs:
+      release_tag: { description: Draft release tag (stack version), required: true, type: string }
+      config_revision: { description: New immutable config revision (YYYY.MM.DD-…), required: true, type: string }
+      publish_metadata: { description: Publish to Supabase after signing the release, required: true, type: boolean, default: false }
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions: { contents: write }
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.release_tag }}
+      REVISION: ${{ inputs.config_revision }}
+      PROFILE: profiles/rx7900xtx-64g-strata-gfx1100.json
+      XRIG_ED25519_PRIVATE_KEY_B64: ${{ secrets.XRIG_ED25519_PRIVATE_KEY_B64 }}
+      XRIG_ED25519_PUBLIC_KEY_B64: ${{ secrets.XRIG_ED25519_PUBLIC_KEY_B64 }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs and profile
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^[a-z0-9][a-z0-9._-]{0,95}$ && "$REVISION" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[a-z0-9.-]+$ ]]
+          node tests/profile.test.js
+          gh release view "$TAG" --json isDraft --jq .isDraft | grep -qx true || { echo 'release must be an unpublished draft' >&2; exit 1; }
+          # The signing key must be the XRIG release authority Vertex embeds.
+          [[ "$(printf %s "$XRIG_ED25519_PUBLIC_KEY_B64" | base64 -d | tail -c 32 | od -An -tx1 | tr -d ' \n')" == a597b72e92859fac5107cf081b0729f1897ce7e99420a4ab39ee64efe2d52efd ]]
+      - name: Download qualified draft assets
+        run: |
+          set -euo pipefail
+          mkdir -p in/runtime in/data
+          gh release download "$TAG" --dir in/runtime --pattern 'xrig-strata-linux-*.tar.gz' --pattern 'runtime-files.sha256'
+          gh release download "$TAG" --dir in/data --pattern 'xrig-strata-data-*'
+          gh release download "$TAG" --dir in --pattern 'qualification.json'
+          ls -la in in/runtime in/data
+      - name: Assemble, sign and build the publication tree
+        run: |
+          set -euo pipefail
+          public="${SUPABASE_URL%/}/storage/v1/object/public/xrig-configs"
+          status=$(curl -sS -o in/stacks-v2.json -w '%{http_code}' "$public/stacks/v2/index.json")
+          if [[ "$status" == 200 ]]; then
+            curl -fsS "$public/stacks/v2/index.json.sig" -o in/stacks-v2.json.sig
+            scripts/verify-artifact.sh in/stacks-v2.json in/stacks-v2.json.sig
+            export EXISTING_STACK_INDEX=in/stacks-v2.json
+          fi
+          status=$(curl -sS -o in/catalogue-v3.json -w '%{http_code}' "$public/catalogues/v3/index.json")
+          [[ "$status" == 200 ]] && export EXISTING_CATALOGUE=in/catalogue-v3.json
+          node scripts/assemble-release.js --profile "$PROFILE" --runtime-dir in/runtime --data-dir in/data \
+            --qualification in/qualification.json --release-tag "$TAG" --config-revision "$REVISION" \
+            --asset-base "https://github.com/${{ github.repository }}/releases/download/$TAG" --metadata-base "$public" --out assembled
+          scripts/build-tree.sh assembled tree "$public"
+          cp in/qualification.json qualification.json && scripts/sign-artifact.sh qualification.json
+      - name: Attach signatures and publish the GitHub release
+        run: |
+          set -euo pipefail
+          runtime=$(ls tree/releases/"$TAG"/xrig-strata-linux-*.tar.gz.sig)
+          gh release upload "$TAG" "$runtime" qualification.json.sig --clobber
+          gh release edit "$TAG" --draft=false
+          mkdir check && gh release download "$TAG" --dir check --pattern '*.tar.gz'
+          for f in tree/releases/"$TAG"/*.tar.gz; do cmp -s "$f" "check/$(basename "$f")"; done
+          echo "GitHub release $TAG published and verified"
+      - name: Publish metadata to Supabase (catalogue last)
+        if: ${{ inputs.publish_metadata }}
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: scripts/publish-supabase.sh tree
+      - name: Keep the publication tree
+        uses: actions/upload-artifact@v4
+        with: { name: "publication-${{ inputs.release_tag }}", path: tree/stacks, retention-days: 90 }
