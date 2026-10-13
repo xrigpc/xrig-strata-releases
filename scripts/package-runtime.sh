@@ -20,7 +20,7 @@ py="$rt/python/bin/python3"
 "$py" -I -m pip uninstall --quiet --yes pip
 rm -f "$rt"/python/bin/pip* "$rt"/python/bin/idle* "$rt"/python/bin/2to3* "$rt"/python/bin/pydoc*
 rm -rf "$rt"/python/lib/python3.*/{idlelib,tkinter,turtledemo,ensurepip,lib2to3} "$rt"/python/lib/{libtcl,libtk}* "$rt"/python/lib/tcl* "$rt"/python/lib/tk*
-"$py" -I -c 'import jinja2, markupsafe, sys; print("python", sys.version.split()[0], "jinja2", jinja2.__version__)'
+"$py" -I -c 'import jinja2, markupsafe, regex, psutil, PIL, sys; print("python", sys.version.split()[0], "jinja2", jinja2.__version__, "regex", regex.__version__, "pillow", PIL.__version__)'
 
 src="$cache/strata-src"
 cp -a "$src/serve" "$src/tools" "$src/data" "$src/LICENSE" "$rt/strata/"
@@ -33,6 +33,10 @@ const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[2]));
 fs.writeFileSync(process.argv[3],JSON.stringify({source:'xrig-strata-releases',backend:'hip',version:p.source.strata_version,archs:[p.platform.gpu_arch],vision:'cpu',strata_commit:p.source.strata_commit,llama_cpp_commit:p.source.llama_cpp_commit,therock:p.therock.version,portable:true},null,1)+'\n');
 NODE
 cp "$build/build-env.txt" "$rt/strata/engine/BUILD-ENV.txt"
+# Import smoke test: every module the server loads at startup must resolve from the stack alone.
+(cd "$rt/strata" && "$py" -I -c 'import sys; sys.path[:0] = [".", "tools"]
+import serve.server, serve.frontend, strata_tokenizer, make_profile, regex, psutil, PIL.Image, jinja2
+print("runtime imports ok")')
 SOURCE_DATE_EPOCH=0 "$py" -I -m compileall -q --invalidation-mode unchecked-hash "$rt/python/lib" "$rt/strata" >/dev/null
 
 # Policy checks mirrored from Vertex stacksetup: no absolute or escaping links, no host RPATH.
