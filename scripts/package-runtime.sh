@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Assembles the relocatable Strata runtime archive:
-#   runtime/python/   python-build-standalone + jinja2/markupsafe (no pip, precompiled)
+#   runtime/python/   python-build-standalone + pinned wheels (no pip, no bytecode)
 #   runtime/strata/   Strata serve/, tools/, data/, LICENSE, engine/{strata,strata-vision,BUILD.json}
 #   runtime/lib/      libgomp.so.1 (strata-vision's OpenMP runtime)
 # Usage: package-runtime.sh PROFILE CACHE_DIR BUILD_DIR RELEASE_VERSION OUT_DIR
@@ -20,7 +20,7 @@ py="$rt/python/bin/python3"
 "$py" -I -m pip uninstall --quiet --yes pip
 rm -f "$rt"/python/bin/pip* "$rt"/python/bin/idle* "$rt"/python/bin/2to3* "$rt"/python/bin/pydoc*
 rm -rf "$rt"/python/lib/python3.*/{idlelib,tkinter,turtledemo,ensurepip,lib2to3} "$rt"/python/lib/{libtcl,libtk}* "$rt"/python/lib/tcl* "$rt"/python/lib/tk*
-"$py" -I -c 'import jinja2, markupsafe, regex, psutil, PIL, sys; print("python", sys.version.split()[0], "jinja2", jinja2.__version__, "regex", regex.__version__, "pillow", PIL.__version__)'
+"$py" -I -B -c 'import jinja2, markupsafe, regex, psutil, PIL, sys; print("python", sys.version.split()[0], "jinja2", jinja2.__version__, "regex", regex.__version__, "pillow", PIL.__version__)'
 
 src="$cache/strata-src"
 cp -a "$src/serve" "$src/tools" "$src/data" "$src/LICENSE" "$rt/strata/"
@@ -34,10 +34,11 @@ fs.writeFileSync(process.argv[3],JSON.stringify({source:'xrig-strata-releases',b
 NODE
 cp "$build/build-env.txt" "$rt/strata/engine/BUILD-ENV.txt"
 # Import smoke test: every module the server loads at startup must resolve from the stack alone.
-(cd "$rt/strata" && "$py" -I -c 'import sys; sys.path[:0] = [".", "tools"]
+(cd "$rt/strata" && "$py" -I -B -c 'import sys; sys.path[:0] = [".", "tools"]
 import serve.server, serve.frontend, strata_tokenizer, make_profile, regex, psutil, PIL.Image, jinja2
 print("runtime imports ok")')
-SOURCE_DATE_EPOCH=0 "$py" -I -m compileall -q --invalidation-mode unchecked-hash "$rt/python/lib" "$rt/strata" >/dev/null
+# No bytecode: marshal output is not byte-stable, and the installed stack is read-only.
+find "$rt" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
 # Policy checks mirrored from Vertex stacksetup: no absolute or escaping links, no host RPATH.
 while IFS= read -r link; do
