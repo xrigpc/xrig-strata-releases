@@ -4,7 +4,11 @@
   "stack_id": "linux-amd-rx7900xtx-64g-strata-gfx1100",
   "engine": "strata",
   "label": "RX 7900 XTX 64 GB (Strata, ROCm gfx1100)",
-  "platform": { "os": "linux", "arch": "amd64", "gpu_arch": "gfx1100" },
+  "platform": {
+    "os": "linux",
+    "arch": "amd64",
+    "gpu_arch": "gfx1100"
+  },
   "build_image": "docker.io/library/ubuntu:24.04@sha256:f610ab94648195aa356059f5b41d6085c9d4d903c072430cdd1af7bdb646106b",
   "source": {
     "strata_repo": "https://github.com/Niko1221/Strata.git",
@@ -20,7 +24,10 @@
     "url": "https://rocm.nightlies.amd.com/tarball/therock-dist-linux-gfx110X-dgpu-7.10.0a20251120.tar.gz",
     "sha256": "00a4d8aa37d5487a9ef7c60618136aa522a54c7520c2f0bbaa952763e6c1619e",
     "size_bytes": 2474345933,
-    "library_dirs": ["rocm/lib", "rocm/lib/rocm_sysdeps/lib"]
+    "library_dirs": [
+      "rocm/lib",
+      "rocm/lib/rocm_sysdeps/lib"
+    ]
   },
   "python": {
     "version": "3.12.14",
@@ -28,57 +35,158 @@
     "sha256": "269b2c99e4db15b242bf01832f4fea1e8f1a664f273cff519393f296e9820b41",
     "size_bytes": 34270188,
     "wheels": [
-      { "name": "jinja2-3.1.6-py3-none-any.whl",
+      {
+        "name": "jinja2-3.1.6-py3-none-any.whl",
         "url": "https://files.pythonhosted.org/packages/py3/j/jinja2/jinja2-3.1.6-py3-none-any.whl",
-        "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67" },
-      { "name": "markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+      },
+      {
+        "name": "markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
         "url": "https://files.pythonhosted.org/packages/cp312/m/markupsafe/markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        "sha256": "d6dd0be5b5b189d31db7cda48b91d7e0a9795f31430b7f271219ab30f1d3ac9d" },
-      { "name": "regex-2026.9.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "d6dd0be5b5b189d31db7cda48b91d7e0a9795f31430b7f271219ab30f1d3ac9d"
+      },
+      {
+        "name": "regex-2026.9.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
         "url": "https://files.pythonhosted.org/packages/cb/f5/dcdf5e0d898024005cfcce631e3e934d111dfbe177ca0b7f253ae8a735a2/regex-2026.9.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        "sha256": "2e67f8843f0e4b931f1fa860bf3bbe4134b714c0155cc5c7c0d7ea450230aae0" },
-      { "name": "pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "2e67f8843f0e4b931f1fa860bf3bbe4134b714c0155cc5c7c0d7ea450230aae0"
+      },
+      {
+        "name": "pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         "url": "https://files.pythonhosted.org/packages/84/21/a35af28dcc61f37ed850a2d64c65c701321dfbf25085e469d5559360cbbf/pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-        "sha256": "78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91" },
-      { "name": "psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91"
+      },
+      {
+        "name": "psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl",
         "url": "https://files.pythonhosted.org/packages/b5/70/5d8df3b09e25bce090399cf48e452d25c935ab72dad19406c77f4e828045/psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl",
-        "sha256": "076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9" }
+        "sha256": "076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9"
+      }
     ]
   },
   "cmake": {
     "engine": {
-      "CMAKE_BUILD_TYPE": "Release", "STRATA_ENABLE_HIP": "ON", "STRATA_ENABLE_CUDA": "OFF",
-      "STRATA_BUILD_TESTS": "OFF", "STRATA_PREFILL_MMQ": "ON", "STRATA_PORTABLE": "ON",
+      "CMAKE_BUILD_TYPE": "Release",
+      "STRATA_ENABLE_HIP": "ON",
+      "STRATA_ENABLE_CUDA": "OFF",
+      "STRATA_BUILD_TESTS": "OFF",
+      "STRATA_PREFILL_MMQ": "ON",
+      "STRATA_PORTABLE": "ON",
       "CMAKE_HIP_ARCHITECTURES": "gfx1100"
     },
     "vision": {
-      "CMAKE_BUILD_TYPE": "Release", "STRATA_VISION_CUDA": "OFF", "STRATA_PORTABLE": "ON"
+      "CMAKE_BUILD_TYPE": "Release",
+      "STRATA_VISION_CUDA": "OFF",
+      "STRATA_PORTABLE": "ON"
     }
   },
   "model": {
     "repo": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
     "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
     "shards": [
-      { "filename": "IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf",
-        "sha256": "92cee27ae5bbadcd732416a0f7a7f0acc092399dbbe8f5a5efa707c2ec0a49d7", "size_bytes": 39225954592 },
-      { "filename": "IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf",
-        "sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113", "size_bytes": 28800138432 }
+      {
+        "filename": "IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf",
+        "sha256": "92cee27ae5bbadcd732416a0f7a7f0acc092399dbbe8f5a5efa707c2ec0a49d7",
+        "size_bytes": 39225954592
+      },
+      {
+        "filename": "IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf",
+        "sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113",
+        "size_bytes": 28800138432
+      }
     ],
-    "mmproj": { "filename": "mmproj-Qwen3.8-Flash-Next-BF16.gguf",
-      "sha256": "b1a82259702816a5330d7bd7607cd9676b11780e79ff7348c21103ff3ce49bd0", "size_bytes": 907543008 },
-    "mtp_source": { "repo": "Qwen/Qwen3.8-Flash-Next", "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540" },
+    "mmproj": {
+      "filename": "mmproj-Qwen3.8-Flash-Next-BF16.gguf",
+      "sha256": "b1a82259702816a5330d7bd7607cd9676b11780e79ff7348c21103ff3ce49bd0",
+      "size_bytes": 907543008
+    },
+    "mtp_source": {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540"
+    },
     "model_name": "qwen3.8-flash-next-iq2_xs"
   },
   "engine_args": {
-    "expert_cache": "auto", "prefill": 16384, "spec": 4, "spec_min_p": 0.5,
-    "max_context": 131072, "kv": "int8", "kv_resident": 32768, "vram_reserve_mib": 700,
-    "vision": { "enabled": true, "gpu": false, "threads": 8, "max_tokens": 300 },
+    "expert_cache": "auto",
+    "prefill": 16384,
+    "spec": 4,
+    "spec_min_p": 0.5,
+    "max_context": 131072,
+    "kv": "int8",
+    "kv_resident": 32768,
+    "vram_reserve_mib": 700,
+    "vision": {
+      "enabled": true,
+      "gpu": false,
+      "threads": 8,
+      "max_tokens": 300
+    },
     "hipblaslt_tuning": "tools/hip/gfx1100-hipblaslt-100200.txt",
     "expert_profile": "data/expert-profile.bin"
   },
   "qualification": {
-    "min_decode_tok_s_mean": 60, "min_decode_tok_s_run": 40, "min_prefill_tok_s_32k": 1200,
-    "levels": [16000, 32000, 126000], "runs_per_level": 2
+    "min_decode_tok_s_mean": 60,
+    "min_decode_tok_s_run": 40,
+    "min_prefill_tok_s_32k": 1200,
+    "levels": [
+      16000,
+      32000,
+      126000
+    ],
+    "runs_per_level": 2
   },
-  "asset_prefix": "xrig-strata-linux-amd-rx7900xtx-64g-gfx1100"
+  "asset_prefix": "xrig-strata-linux-amd-rx7900xtx-64g-gfx1100",
+  "config": {
+    "id": "qwen3.8-flash-next-strata-xtx64",
+    "name": "Qwen 3.8 Flash Next 125B MoE — Strata, RX 7900 XTX 64 GB",
+    "description": "Strata engine (IQ2_XS, 131072-token context, MTP spec 4, 16384-token prefill chunks, int8 KV, CPU vision). Requires an RX 7900 XTX (24 GB) and 64 GB of system RAM.",
+    "status": "stable",
+    "gpu_profile": "linux-amd-rx7900xtx-64g-rocm-gfx1100",
+    "is_factory_default": true,
+    "compatibility": {
+      "os": [
+        "linux"
+      ],
+      "backend": "rocm",
+      "vendor": "amd",
+      "gpu_match": [
+        "7900 XTX"
+      ],
+      "best_fit_gpu": "AMD Radeon RX 7900 XTX 24 GB + 64 GB RAM",
+      "min_vram_gb": 24,
+      "min_ram_gb": 60,
+      "require": {
+        "vendor": "amd",
+        "gpu_arch": [
+          "gfx1100"
+        ]
+      }
+    },
+    "data_directories": {
+      "pack": "strata-pack-iq2_xs",
+      "mtp": "strata-mtp-rt"
+    },
+    "client": {
+      "model": "qwen3.8-flash-next-iq2_xs",
+      "integrations": {
+        "context_tokens": 131072,
+        "max_output_tokens": 32768,
+        "reasoning": true,
+        "vision": true,
+        "reasoning_field": "reasoning_content",
+        "chunk_timeout_ms": 240000,
+        "compaction": true,
+        "compaction_reserved_tokens": 34816,
+        "compaction_prune": false,
+        "compaction_threshold": 0.7,
+        "compaction_retain": 0.16
+      }
+    },
+    "policy": {
+      "locked_fields": [
+        "model",
+        "runtime",
+        "client.integrations"
+      ],
+      "user_tweakable": []
+    }
+  }
 }
