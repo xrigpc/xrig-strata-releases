@@ -35,6 +35,17 @@ cmake -G Ninja -S "$src" -B /build/build-hip "${engine_defs[@]}" \
   -DCMAKE_HIP_FLAGS="--rocm-path=$rocm --rocm-device-lib-path=$bitcode" \
   -DSTRATA_GGML_DIR="$llama" -DCMAKE_HIP_ARCHITECTURES="$gpu_arch"
 cmake --build /build/build-hip --target strata --parallel "${XRIG_BUILD_JOBS:-$(nproc)}"
+mapfile -t unit_tests < <(python3 -c 'import json; [print(t["target"], t["checks"]) for t in json.load(open("/profile.json")).get("unit_tests", [])]')
+for ut in "${unit_tests[@]}"; do
+  read -r target checks <<< "$ut"
+  cmake --build /build/build-hip --target "$target" --parallel "${XRIG_BUILD_JOBS:-$(nproc)}"
+  bin=$(find /build/build-hip -maxdepth 3 -type f -name "$target" | head -1)
+  [[ -x "$bin" ]] || { echo "unit test $target was not built" >&2; exit 1; }
+  log=/out/unit-$target.log
+  "$bin" > "$log" 2>&1 || { tail -20 "$log"; echo "unit test $target FAILED" >&2; exit 1; }
+  grep -qw "$checks" "$log" || { tail -5 "$log"; echo "unit test $target: expected $checks checks" >&2; exit 1; }
+  echo "unit test $target: pass ($checks checks)"
+done
 
 mapfile -t vision_defs < <(cmake_defs vision)
 cmake -G Ninja -S "$src/tools/vision" -B /build/build-vision "${vision_defs[@]}" -DLLAMA_DIR="$llama"
@@ -54,6 +65,7 @@ grep -q -- '-march=native' /build/build-hip/build.ninja && { echo 'engine build 
   echo "cmake: $(cmake --version | head -1)"
   echo "ninja: $(ninja --version)"
   echo "hip_clang: $("$clang" --version | head -1)"
+  echo "strata_version: $(/out/engine/strata --version 2>&1 | head -1 || true)"
   for b in strata strata-vision; do
     echo "$b max GLIBC: $(objdump -T /out/engine/$b | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
     echo "$b max GLIBCXX: $(objdump -T /out/engine/$b | grep -o 'GLIBCXX_[0-9.]*' | sort -uV | tail -1)"

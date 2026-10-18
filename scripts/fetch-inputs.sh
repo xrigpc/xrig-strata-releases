@@ -48,4 +48,17 @@ git -C "$src" clean -qfdx
 [[ "$(git -C "$src" rev-parse HEAD)" == "$commit" ]] || { echo 'Strata checkout differs from the pin' >&2; exit 1; }
 grep -q "VERSION $(f source.strata_version)" "$src/CMakeLists.txt" || { echo 'Strata version differs from the pin' >&2; exit 1; }
 echo "Strata $commit verified"
+patches=$(node -e 'const p=require(require("path").resolve(process.argv[1]));for(const x of (p.source.patches||[]))console.log(x.file,x.sha256)' "$profile")
+if [[ -n "$patches" ]]; then
+  while read -r pf psha; do
+    pp="$here/../$pf"
+    [[ "$(sha256sum "$pp" | awk '{print $1}')" == "$psha" ]] || { echo "patch sha256 mismatch: $pf" >&2; exit 1; }
+    git -C "$src" apply --whitespace=nowarn "$pp"
+    echo "applied $pf"
+  done <<< "$patches"
+  git -C "$src" add -A
+  tree=$(git -C "$src" write-tree)
+  [[ "$tree" == "$(f source.expected_tree)" ]] || { echo "patched tree $tree differs from source.expected_tree" >&2; exit 1; }
+  echo "patched tree $tree verified"
+fi
 echo 'all pinned inputs verified'

@@ -20,6 +20,12 @@ const s = p.source || {};
 if (s.strata_repo !== 'https://github.com/Niko1221/Strata.git' || !commit(s.strata_commit) || !/^[0-9]+(\.[0-9]+){2,3}$/.test(s.strata_version || '')) die('invalid Strata source pin');
 if (!commit(s.llama_cpp_commit) || s.llama_cpp_zip_url !== `https://github.com/ggml-org/llama.cpp/archive/${s.llama_cpp_commit}.zip` || !sha(s.llama_cpp_zip_sha256) || !size(s.llama_cpp_zip_size_bytes)) die('invalid llama.cpp source pin');
 
+if (s.patches !== undefined) {
+  if (!Array.isArray(s.patches) || !s.patches.length || !s.patches.every(x => /^patches\/[A-Za-z0-9_.-]+\.patch$/.test(x.file || '') && sha(x.sha256))) die('invalid source.patches');
+  if (!/^[a-f0-9]{40}$/.test(s.expected_tree || '')) die('source.patches requires source.expected_tree (git write-tree)');
+}
+if (p.unit_tests !== undefined && (!Array.isArray(p.unit_tests) || !p.unit_tests.every(u => /^[a-z0-9_]+$/.test(u.target || '') && Number.isSafeInteger(u.checks) && u.checks > 0))) die('invalid unit_tests');
+
 const t = p.therock || {};
 if (!/^https:\/\/rocm\.nightlies\.amd\.com\/tarball\//.test(t.url || '') || !sha(t.sha256) || !size(t.size_bytes) || !Array.isArray(t.library_dirs) || !t.library_dirs.every(d => /^rocm(\/[a-z0-9_.-]+)*$/.test(d))) die('invalid AMD TheRock pin');
 
@@ -38,7 +44,8 @@ if (!m.shards?.length || files.some(f => !f || !sha(f.sha256) || !size(f.size_by
 if (!commit(m.mtp_source?.revision)) die('invalid MTP source pin');
 
 const e = p.engine_args || {};
-if (e.kv !== 'int8' || e.spec !== 4 || e.prefill !== 16384 || e.max_context !== 131072) die('engine_args differ from the locked parameters (parameters.md)');
+// max_context: 131072 for the 0.1.43.1 lane, 262144 for Node (0.1.44.1 + the SSD conversation tier)
+if (e.kv !== 'int8' || e.spec !== 4 || e.prefill !== 16384 || ![131072, 262144].includes(e.max_context)) die('engine_args differ from the locked parameters (parameters.md)');
 
 if (process.argv[3]) {
   const value = process.argv[3].split('.').reduce((o, k) => o?.[k], p);
