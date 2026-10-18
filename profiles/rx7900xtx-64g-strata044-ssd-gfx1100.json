@@ -111,14 +111,14 @@
       "repo": "Qwen/Qwen3.8-Flash-Next",
       "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540"
     },
-    "model_name": "qwen3.8-flash-next-iq2_xs"
+    "model_name": "qwen3.8-flash-next-iq3_s"
   },
   "engine_args": {
     "expert_cache": "auto",
     "prefill": 16384,
     "spec": 4,
     "spec_min_p": 0.5,
-    "max_context": 131072,
+    "max_context": 262144,
     "kv": "int8",
     "kv_resident": 32768,
     "vram_reserve_mib": 700,
@@ -146,7 +146,7 @@
   "config": {
     "id": "qwen3.8-flash-next-strata-xtx64",
     "name": "Qwen 3.8 Flash Next 125B MoE — Strata, RX 7900 XTX 64 GB",
-    "description": "Strata engine (IQ2_XS, 131072-token context, MTP spec 4, 16384-token prefill chunks, int8 KV, CPU vision). Requires an RX 7900 XTX (24 GB) and 64 GB of system RAM.",
+    "description": "Strata 0.1.44.1 engine (IQ3_S, 262144-token context, MTP spec 4, 16384-token prefill chunks, int8 KV, RAM and SSD conversation cache, CPU vision). Requires an RX 7900 XTX (24 GB) and 64 GB of system RAM.",
     "status": "stable",
     "gpu_profile": "linux-amd-rx7900xtx-64g-rocm-gfx1100",
     "is_factory_default": true,
@@ -170,13 +170,13 @@
       }
     },
     "data_directories": {
-      "pack": "strata-pack-iq2_xs",
+      "pack": "strata-pack-iq3_s",
       "mtp": "strata-mtp-rt"
     },
     "client": {
-      "model": "qwen3.8-flash-next-iq2_xs",
+      "model": "qwen3.8-flash-next-iq3_s",
       "integrations": {
-        "context_tokens": 131072,
+        "context_tokens": 262144,
         "max_output_tokens": 32768,
         "reasoning": true,
         "vision": true,

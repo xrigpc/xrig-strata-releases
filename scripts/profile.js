@@ -44,7 +44,8 @@ if (!m.shards?.length || files.some(f => !f || !sha(f.sha256) || !size(f.size_by
 if (!commit(m.mtp_source?.revision)) die('invalid MTP source pin');
 
 const e = p.engine_args || {};
-if (e.kv !== 'int8' || e.spec !== 4 || e.prefill !== 16384 || e.max_context !== 131072) die('engine_args differ from the locked parameters (parameters.md)');
+// max_context: 131072 for the 0.1.43.1 lane, 262144 for Node (0.1.44.1 + the SSD conversation tier)
+if (e.kv !== 'int8' || e.spec !== 4 || e.prefill !== 16384 || ![131072, 262144].includes(e.max_context)) die('engine_args differ from the locked parameters (parameters.md)');
 
 if (process.argv[3]) {
   const value = process.argv[3].split('.').reduce((o, k) => o?.[k], p);
