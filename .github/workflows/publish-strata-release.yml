@@ -9,6 +9,14 @@ name: Publish — RX 7900 XTX 64 GB (Strata, ROCm gfx1100)
       release_tag: { description: Draft release tag (stack version), required: true, type: string }
       config_revision: { description: New immutable config revision (YYYY.MM.DD-…), required: true, type: string }
       publish_metadata: { description: Publish to Supabase after signing the release, required: true, type: boolean, default: false }
+      profile:
+        description: Lane profile the draft was built and qualified with
+        required: true
+        type: choice
+        default: profiles/rx7900xtx-64g-strata-gfx1100.json
+        options:
+          - profiles/rx7900xtx-64g-strata-gfx1100.json
+          - profiles/rx7900xtx-64g-strata044-ssd-gfx1100.json
 jobs:
   publish:
     runs-on: ubuntu-24.04
@@ -18,7 +26,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.release_tag }}
       REVISION: ${{ inputs.config_revision }}
-      PROFILE: profiles/rx7900xtx-64g-strata-gfx1100.json
+      PROFILE: ${{ inputs.profile }}
       XRIG_ED25519_PRIVATE_KEY_B64: ${{ secrets.XRIG_ED25519_PRIVATE_KEY_B64 }}
       XRIG_ED25519_PUBLIC_KEY_B64: ${{ secrets.XRIG_ED25519_PUBLIC_KEY_B64 }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -36,7 +44,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p in/runtime in/data
-          gh release download "$TAG" --dir in/runtime --pattern 'xrig-strata-linux-*.tar.gz' --pattern 'runtime-files.sha256'
+          prefix=$(node scripts/profile.js "$PROFILE" asset_prefix)
+          gh release download "$TAG" --dir in/runtime --pattern "$prefix-*.tar.gz" --pattern 'runtime-files.sha256'
           gh release download "$TAG" --dir in/data --pattern 'xrig-strata-data-*'
           gh release download "$TAG" --dir in --pattern 'qualification.json'
           ls -la in in/runtime in/data
@@ -60,7 +69,7 @@ jobs:
       - name: Attach signatures and publish the GitHub release
         run: |
           set -euo pipefail
-          runtime=$(ls tree/releases/"$TAG"/xrig-strata-linux-*.tar.gz.sig)
+          runtime=$(ls tree/releases/"$TAG"/"$(node scripts/profile.js "$PROFILE" asset_prefix)"-*.tar.gz.sig)
           gh release upload "$TAG" "$runtime" qualification.json.sig --clobber
           gh release edit "$TAG" --draft=false
           mkdir check && gh release download "$TAG" --dir check --pattern '*.tar.gz'
