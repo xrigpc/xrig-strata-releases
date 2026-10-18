@@ -56,3 +56,21 @@ descriptor and config revision, then the signed `stacks/v2` index, then
 
 Never replace a release asset, stack version, descriptor or config revision:
 publish a new version instead.
+
+## 4. Config-only revision (xrig PC, production workflow)
+A new configuration revision on an already-published stack: the live revision's model, data archives and stack
+are kept, so Vertex downloads nothing new. The lane profile's `engine_args`, `sampling`, `config.description` and
+`config.client` are applied. Dispatch **Publish config revision** (`publish-config-revision.yml`) with:
+- `base_revision`: the revision the catalogue lists now (the run refuses any other);
+- `config_revision`: the new immutable revision;
+- `profile`: the lane profile;
+- `publish_metadata`.
+
+The run checks the live catalogue row, the base config (signature and catalogue digest) and the signed `stacks/v2`
+index, prints the old-vs-new diff, signs the new revision and publishes it with the catalogue row last.
+Locally: `scripts/assemble-config-revision.js` then `scripts/build-tree.sh` (a tree without `stack.json` holds only
+the config and the catalogue) and `scripts/publish-supabase.sh`.
+
+`sampling` in a profile becomes the configuration's `runtime.sampling`. Vertex 1.1.0-rc.5 and earlier refuse a
+Strata configuration that sets it, so only the Node lane (0.1.44.1) carries it; the contract test keeps it off the
+0.1.43.1 lane.

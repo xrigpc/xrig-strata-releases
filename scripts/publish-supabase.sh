@@ -18,7 +18,7 @@ work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 # Every signed document must verify with the production public key before upload.
 while IFS= read -r sig; do
   "$here/verify-artifact.sh" "${sig%.sig}" "$sig" >/dev/null
-done < <(cd "$tree" && find stacks/v2 configs -name '*.sig' | sed "s|^|$tree/|")
+done < <(cd "$tree" && find stacks/v2 configs -name '*.sig' 2>/dev/null | sed "s|^|$tree/|")
 
 put() { # OBJECT FILE MODE(immutable|upsert)
   local object=$1 file=$2 mode=$3 status
@@ -37,11 +37,17 @@ put() { # OBJECT FILE MODE(immutable|upsert)
 
 cd "$tree"
 for f in stacks/v2/*.json configs/*/*.json; do
-  [[ "$f" == stacks/v2/index.json ]] && continue
+  [[ -e "$f" && "$f" != stacks/v2/index.json ]] || continue   # a config-only tree has no stacks/v2
   put "$f" "$f" immutable
   put "$f.sig" "$f.sig" immutable
 done
-put stacks/v2/index.json stacks/v2/index.json upsert
-put stacks/v2/index.json.sig stacks/v2/index.json.sig upsert
+if [[ -e stacks/v2/index.json ]]; then
+  put stacks/v2/index.json stacks/v2/index.json upsert
+  put stacks/v2/index.json.sig stacks/v2/index.json.sig upsert
+fi
 put catalogues/v3/index.json catalogues/v3/index.json upsert
-echo 'published stack descriptor, config revision, stacks/v2 index and catalogues/v3 (last)'
+if [[ -e stacks/v2/index.json ]]; then
+  echo 'published stack descriptor, config revision, stacks/v2 index and catalogues/v3 (last)'
+else
+  echo 'published the config revision and catalogues/v3 (last); its stack was already published'
+fi
