@@ -1,0 +1,81 @@
+name: Publish config revision — RX 7900 XTX 64 GB (Strata, ROCm gfx1100)
+# Publishes a config-only revision: the live revision's model, data archives and stack are kept (Vertex downloads
+# nothing new); the lane profile's engine settings, sampling, description and client block are applied. The live
+# catalogue row, its config and the stacks/v2 index are signature-checked first. Keys exist only in the protected
+# production environment, as for publish-strata-release.yml.
+"on":
+  workflow_dispatch:
+    inputs:
+      base_revision: { description: Live config revision this one replaces (must be the catalogue's current row), required: true, type: string }
+      config_revision: { description: New immutable config revision (YYYY.MM.DD-…), required: true, type: string }
+      publish_metadata: { description: Publish to Supabase after building the signed tree, required: true, type: boolean, default: false }
+      profile:
+        description: Lane profile whose engine settings the revision takes
+        required: true
+        type: choice
+        default: profiles/rx7900xtx-64g-strata044-ssd-gfx1100.json
+        options:
+          - profiles/rx7900xtx-64g-strata044-ssd-gfx1100.json
+          - profiles/rx7900xtx-64g-strata-gfx1100.json
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions: { contents: read }
+    env:
+      BASE: ${{ inputs.base_revision }}
+      REVISION: ${{ inputs.config_revision }}
+      PROFILE: ${{ inputs.profile }}
+      XRIG_ED25519_PRIVATE_KEY_B64: ${{ secrets.XRIG_ED25519_PRIVATE_KEY_B64 }}
+      XRIG_ED25519_PUBLIC_KEY_B64: ${{ secrets.XRIG_ED25519_PUBLIC_KEY_B64 }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs and profile
+        run: |
+          set -euo pipefail
+          [[ "$BASE" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[a-z0-9.-]+$ && "$REVISION" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[a-z0-9.-]+$ && "$BASE" != "$REVISION" ]]
+          node tests/profile.test.js
+          # The signing key must be the XRIG release authority Vertex embeds.
+          [[ "$(printf %s "$XRIG_ED25519_PUBLIC_KEY_B64" | base64 -d | tail -c 32 | od -An -tx1 | tr -d ' \n')" == a597b72e92859fac5107cf081b0729f1897ce7e99420a4ab39ee64efe2d52efd ]]
+      - name: Fetch and verify the live revision and its stack
+        run: |
+          set -euo pipefail
+          public="${SUPABASE_URL%/}/storage/v1/object/public/xrig-configs"
+          id=$(node scripts/profile.js "$PROFILE" config.id)
+          mkdir in
+          curl -fsS "$public/catalogues/v3/index.json" -o in/catalogue-v3.json
+          node -e '
+            const rows=require("./in/catalogue-v3.json"), [id, base]=process.argv.slice(1);
+            const row=rows.find(r=>r.id===id);
+            if(!row) throw Error(`no catalogue row for ${id}`);
+            if(row.config_version!==base) throw Error(`the catalogue lists ${row.config_version}, not ${base}`);
+          ' "$id" "$BASE"
+          curl -fsS "$public/configs/$id/$BASE.json" -o in/base.json
+          curl -fsS "$public/configs/$id/$BASE.json.sig" -o in/base.json.sig
+          scripts/verify-artifact.sh in/base.json in/base.json.sig
+          want=$(node -e 'console.log(require("./in/catalogue-v3.json").find(r=>r.id===process.argv[1]).config_sha256)' "$id")
+          [[ "$(sha256sum in/base.json | cut -c1-64)" == "$want" ]] || { echo 'live config differs from its catalogue digest' >&2; exit 1; }
+          curl -fsS "$public/stacks/v2/index.json" -o in/stacks-v2.json
+          curl -fsS "$public/stacks/v2/index.json.sig" -o in/stacks-v2.json.sig
+          scripts/verify-artifact.sh in/stacks-v2.json in/stacks-v2.json.sig
+          node -e '
+            const idx=require("./in/stacks-v2.json"), ref=require("./in/base.json").runtime.ref;
+            if(!idx.stacks.some(s=>s.stack_id===ref.stack_id&&s.version===ref.version)) throw Error(`stack ${ref.stack_id}/${ref.version} is not published`);
+          '
+      - name: Assemble, sign and build the publication tree
+        run: |
+          set -euo pipefail
+          public="${SUPABASE_URL%/}/storage/v1/object/public/xrig-configs"
+          node scripts/assemble-config-revision.js --profile "$PROFILE" --base-config in/base.json --config-revision "$REVISION" \
+            --metadata-base "$public" --out assembled
+          EXISTING_CATALOGUE=in/catalogue-v3.json scripts/build-tree.sh assembled tree "$public"
+          echo "--- old vs new revision"; diff <(node -e 'console.log(JSON.stringify(require("./in/base.json"),null,2))') tree/configs/*/"$REVISION".json || true
+      - name: Publish metadata to Supabase (catalogue last)
+        if: ${{ inputs.publish_metadata }}
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: scripts/publish-supabase.sh tree
+      - name: Keep the publication tree
+        uses: actions/upload-artifact@v4
+        with: { name: "config-revision-${{ inputs.config_revision }}", path: tree, retention-days: 90 }

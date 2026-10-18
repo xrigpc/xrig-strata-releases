@@ -47,6 +47,20 @@ const e = p.engine_args || {};
 // max_context: 131072 for the 0.1.43.1 lane, 262144 for Node (0.1.44.1 + the SSD conversation tier)
 if (e.kv !== 'int8' || e.spec !== 4 || e.prefill !== 16384 || ![131072, 262144].includes(e.max_context)) die('engine_args differ from the locked parameters (parameters.md)');
 
+// sampling (optional): runtime.sampling, Strata's defaults for requests that leave those fields out
+// (Vertex accepts it for Strata from the release after 1.1.0-rc.5; the ranges are Vertex's)
+if (p.sampling !== undefined) {
+  const v = p.sampling, num = x => typeof x === 'number' && Number.isFinite(x);
+  const keys = ['temp', 'top_p', 'top_k', 'min_p', 'presence_penalty', 'repeat_penalty'];
+  if (typeof v !== 'object' || Object.keys(v).some(k => !keys.includes(k))) die('sampling: unknown field');
+  if (!num(v.temp) || v.temp < 0 || v.temp > 5 || !num(v.top_p) || v.top_p < 0 || v.top_p > 1 ||
+      !Number.isSafeInteger(v.top_k) || v.top_k < 0 || v.top_k > 1000000 ||
+      (v.min_p !== undefined && (!num(v.min_p) || v.min_p < 0 || v.min_p > 1)) ||
+      (v.presence_penalty !== undefined && (!num(v.presence_penalty) || v.presence_penalty < -2 || v.presence_penalty > 2)) ||
+      (v.repeat_penalty !== undefined && (!num(v.repeat_penalty) || v.repeat_penalty < 0 || v.repeat_penalty > 10)))
+    die('sampling values out of range');
+}
+
 if (process.argv[3]) {
   const value = process.argv[3].split('.').reduce((o, k) => o?.[k], p);
   if (value === undefined) process.exitCode = 2;

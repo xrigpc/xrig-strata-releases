@@ -9,6 +9,8 @@
 # STAGING_BOOTSTRAP=1 also writes an empty signed stacks/v1 index and an empty
 # catalogues/v2 index so a staging Vertex has every feed it reads.
 # Signing: XRIG_ED25519_PRIVATE_KEY_B64 (see sign-artifact.sh).
+# A config-only assembly (assemble-config-revision.js: no stack.json) writes only the config revision and the
+# catalogue; the stack it names is already published.
 # Usage: build-tree.sh ASSEMBLED_DIR TREE_DIR METADATA_BASE_URL
 set -euo pipefail
 assembled=$(realpath "${1:?usage: build-tree.sh ASSEMBLED_DIR TREE_DIR METADATA_BASE_URL}")
@@ -16,10 +18,13 @@ tree=${2:?}; base=${3:?}; base=${base%/}
 here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$tree"; tree=$(realpath "$tree")
 field() { node -e 'const x=require(process.argv[1]);console.log(process.argv[2].split(".").reduce((o,k)=>o[k],x))' "$1" "$2"; }
-stack_id=$(field "$assembled/stack.json" stack_id); version=$(field "$assembled/stack.json" version)
 config_id=$(field "$assembled/config.json" id); revision=$(field "$assembled/config.json" version)
+with_stack=0; [[ -f "$assembled/stack.json" ]] && with_stack=1
+mkdir -p "$tree/configs/$config_id" "$tree/catalogues/v3"
 
-mkdir -p "$tree/stacks/v2" "$tree/configs/$config_id" "$tree/catalogues/v3" "$tree/releases/$version"
+if [[ $with_stack == 1 ]]; then
+stack_id=$(field "$assembled/stack.json" stack_id); version=$(field "$assembled/stack.json" version)
+mkdir -p "$tree/stacks/v2" "$tree/releases/$version"
 descriptor="$tree/stacks/v2/${stack_id}-${version}.json"
 [[ ! -e "$descriptor" ]] || { echo "stack $stack_id/$version already exists: stack versions are immutable" >&2; exit 1; }
 cp "$assembled/stack.json" "$descriptor"
@@ -35,6 +40,7 @@ index.stacks.push({stack_id:stack,version,descriptor_url:url,signature_url:url+'
 fs.writeFileSync(out,JSON.stringify(index,null,2)+'\n');
 NODE
 "$here/sign-artifact.sh" "$tree/stacks/v2/index.json"
+fi
 
 config="$tree/configs/$config_id/$revision.json"
 [[ ! -e "$config" ]] || { echo "config $config_id/$revision already exists: revisions are immutable" >&2; exit 1; }
@@ -52,16 +58,22 @@ rows=rows.filter(r=>r.id!==row.id);rows.push(row);
 fs.writeFileSync(out,JSON.stringify(rows,null,2)+'\n');
 NODE
 
+if [[ $with_stack == 1 ]]; then
 node -e 'for(const a of require(process.argv[1]))console.log(a.name+"\t"+a.path)' "$assembled/assets.json" |
 while IFS=$'\t' read -r name src; do
   cp --reflink=auto "$src" "$tree/releases/$version/$name"
 done
 runtime=$(node -e 'console.log(require(process.argv[1])[0].name)' "$assembled/assets.json")
 "$here/sign-artifact.sh" "$tree/releases/$version/$runtime"
+fi
 
 if [[ "${STAGING_BOOTSTRAP:-0}" == 1 ]]; then
   mkdir -p "$tree/stacks/v1" "$tree/catalogues/v2"
   [[ -e "$tree/stacks/v1/index.json" ]] || { printf '%s\n' '{"schema_version":1,"stacks":[]}' > "$tree/stacks/v1/index.json"; "$here/sign-artifact.sh" "$tree/stacks/v1/index.json"; }
   [[ -e "$tree/catalogues/v2/index.json" ]] || printf '[]\n' > "$tree/catalogues/v2/index.json"
 fi
-echo "publication tree for $stack_id/$version and $config_id/$revision written to $tree"
+if [[ $with_stack == 1 ]]; then
+  echo "publication tree for $stack_id/$version and $config_id/$revision written to $tree"
+else
+  echo "publication tree for $config_id/$revision (config only) written to $tree"
+fi
