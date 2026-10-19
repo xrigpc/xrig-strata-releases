@@ -47,6 +47,31 @@ const e = p.engine_args || {};
 // max_context: 131072 for the 0.1.43.1 lane, 262144 for Node (0.1.44.1 + the SSD conversation tier)
 if (e.kv !== 'int8' || e.spec !== 4 || e.prefill !== 16384 || ![131072, 262144].includes(e.max_context)) die('engine_args differ from the locked parameters (parameters.md)');
 
+// tuning (optional): engine_args pcie_frac, adapt, draft and placement become runtime.strata fields, launched by Vertex
+// on 0.1.44.1+ stacks only (Vertex accepts them from the release after 1.1.0-rc.6; the ranges are Vertex's)
+{
+  const intIn = (x, lo, hi) => x === undefined || (Number.isSafeInteger(x) && x >= lo && x <= hi);
+  const numIn = (x, lo, hi) => x === undefined || (typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi);
+  const block = (name, keys) => {
+    const v = e[name];
+    if (v === undefined) return {};
+    if (v === null || typeof v !== 'object' || Array.isArray(v) || !Object.keys(v).length || Object.keys(v).some(k => !keys.includes(k)))
+      die(`engine_args.${name}: unknown field or no field`);
+    return v;
+  };
+  const a = block('adapt', ['every', 'swaps', 'decay', 'async', 'min_gain']);
+  const d = block('draft', ['lookup_chain', 'suffix_draft', 'mtp_max_t']);
+  const pl = block('placement', ['aux_cpus', 'pool_workers']);
+  if (!numIn(e.pcie_frac, 0, 0.85) ||
+      !intIn(a.every, 1, 16) || !intIn(a.swaps, 0, 96) || !numIn(a.decay, 0.5, 0.999) || !numIn(a.min_gain, 0.5, 10) ||
+      (a.async !== undefined && typeof a.async !== 'boolean') ||
+      !intIn(d.lookup_chain, 0, 7) || !intIn(d.suffix_draft, 0, 8) || !intIn(d.mtp_max_t, 0, 8) ||
+      (pl.aux_cpus !== undefined && (typeof pl.aux_cpus !== 'string' || pl.aux_cpus.length > 64 ||
+        !/^(off|auto|(0|[1-9][0-9]{0,3})(,(0|[1-9][0-9]{0,3}))*)$/.test(pl.aux_cpus))) ||
+      !intIn(pl.pool_workers, 0, 64))
+    die('engine_args tuning values out of range');
+}
+
 // sampling (optional): runtime.sampling, Strata's defaults for requests that leave those fields out
 // (Vertex accepts it for Strata from the release after 1.1.0-rc.5; the ranges are Vertex's)
 if (p.sampling !== undefined) {

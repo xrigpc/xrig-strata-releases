@@ -74,3 +74,11 @@ the config and the catalogue) and `scripts/publish-supabase.sh`.
 `sampling` in a profile becomes the configuration's `runtime.sampling`. Vertex 1.1.0-rc.5 and earlier refuse a
 Strata configuration that sets it, so only the Node lane (0.1.44.1) carries it; the contract test keeps it off the
 0.1.43.1 lane.
+
+`engine_args` may also set engine tuning, copied into `runtime.strata` only when present (a profile without it
+assembles the same configuration as before): `pcie_frac` (0-0.85), `adapt` {`every` 1-16, `swaps` 0-96, `decay`
+0.5-0.999, `async` bool, `min_gain` 0.5-10}, `draft` {`lookup_chain` 0-7, `suffix_draft` 0-8, `mtp_max_t` 0-8} and
+`placement` {`aux_cpus` `off`, `auto` or CPU indices such as `7,8,15`; `pool_workers` 0-64}. `profile.js` checks the
+same ranges as Vertex. Vertex launches them on 0.1.44.1+ stacks only, and 1.1.0-rc.6 and earlier refuse a
+configuration that sets any of them, so they stay off the 0.1.43.1 lane. `engine-config.js` (qualification) does not
+apply them.
