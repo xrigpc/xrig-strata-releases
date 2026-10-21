@@ -30,6 +30,7 @@ const config = {
       expert_cache: e.expert_cache, vram_reserve_mib: e.vram_reserve_mib, vision: e.vision } },
   client: c.client, policy: c.policy,
 };
+for (const k of ['pcie_frac', 'adapt', 'draft', 'placement']) if (e[k] !== undefined) config.runtime.strata[k] = e[k];
 if (p.sampling) config.runtime.sampling = p.sampling;
 
 fs.mkdirSync(args.out, { recursive: true });
