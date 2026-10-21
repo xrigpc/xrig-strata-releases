@@ -1,0 +1,43 @@
+--- a/include/strata/core/conversation_buffer.hpp	2026-10-21 15:06:38.814274648 +0530
++++ b/include/strata/core/conversation_buffer.hpp	2026-10-21 15:06:38.824079568 +0530
+@@ -26,21 +26,36 @@
+ template<class T> struct SegmentAllocator {
+     using value_type = T;
+     static constexpr size_t map_min = 1024 * 1024;
++    static constexpr size_t huge_page = 2 * 1024 * 1024;
++    static size_t mapped_len(size_t n) { return (n * sizeof(T) + 4095) & ~size_t(4095); }   // whole pages
+     SegmentAllocator() = default;
+     template<class U> SegmentAllocator(const SegmentAllocator<U>&) noexcept {}
+     T* allocate(size_t n) {
+ #if defined(__linux__)
+         if (n * sizeof(T) >= map_min) {
+-            void* p = ::mmap(nullptr, n * sizeof(T), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+-            if (p == MAP_FAILED) throw std::bad_alloc();
+-            return static_cast<T*>(p);
++            // xrig fix (21-Oct): a fresh mapping costs a page fault per 4 KiB on first touch (~4,096 per segment), and
++            // a park writes its segments on the request path, so the faults showed as ~1 s more TTFT.  Map 2 MiB
++            // aligned, ask for transparent huge pages and populate it in one call: ~512x fewer faults.  Both madvise
++            // calls are hints; an older kernel or THP "never" just falls back to 4 KiB pages.
++            const size_t len = mapped_len(n);
++            const size_t span = len + huge_page;
++            char* raw = static_cast<char*>(::mmap(nullptr, span, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
++            if (raw == MAP_FAILED) throw std::bad_alloc();
++            char* p = reinterpret_cast<char*>((reinterpret_cast<uintptr_t>(raw) + huge_page - 1) & ~uintptr_t(huge_page - 1));
++            if (p > raw) ::munmap(raw, size_t(p - raw));
++            if (raw + span > p + len) ::munmap(p + len, size_t(raw + span - (p + len)));
++            ::madvise(p, len, MADV_HUGEPAGE);
++#if defined(MADV_POPULATE_WRITE)
++            ::madvise(p, len, MADV_POPULATE_WRITE);
++#endif
++            return reinterpret_cast<T*>(p);
+         }
+ #endif
+         return std::allocator<T>().allocate(n);
+     }
+     void deallocate(T* p, size_t n) noexcept {
+ #if defined(__linux__)
+-        if (n * sizeof(T) >= map_min) { ::munmap(p, n * sizeof(T)); return; }
++        if (n * sizeof(T) >= map_min) { ::munmap(p, mapped_len(n)); return; }
+ #endif
+         std::allocator<T>().deallocate(p, n);
+     }
