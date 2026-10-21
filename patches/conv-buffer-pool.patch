@@ -13,7 +13,7 @@ diff --color -ru a/include/strata/core/conversation_buffer.hpp b/include/strata/
  #include <utility>
  #include <vector>
  
-@@ -18,6 +21,53 @@
+@@ -18,6 +21,62 @@
  
  namespace strata::core {
  
@@ -30,7 +30,7 @@ diff --color -ru a/include/strata/core/conversation_buffer.hpp b/include/strata/
 +    std::mutex m;
 +    std::vector<void*> free;
 +    size_t hits = 0, misses = 0, unmapped_over_cap = 0, released = 0;   // counts for the park log line
-+    static SegmentPool& get() { static SegmentPool pool; return pool; }
++    static SegmentPool& get() { static SegmentPool* pool = new SegmentPool; return *pool; }   // leaked: usable at exit
 +    static size_t cap() {
 +        static const size_t c = [] {
 +            const char* v = std::getenv("STRATA_CONV_SEGMENT_POOL_MIB");
@@ -42,12 +42,21 @@ diff --color -ru a/include/strata/core/conversation_buffer.hpp b/include/strata/
 +};
 +}  // namespace conversation_detail
 +
-+// Unmaps every pooled segment mapping (the RAM goes back to the kernel).  Returns the bytes released.
-+inline size_t release_segment_pool() {
++// Unmaps pooled segment mappings until at least `bytes` went back to the kernel (all of them by default), so a
++// caller short of RAM gives back only its shortfall and the rest of the pool keeps serving captures.  Returns the
++// bytes released.
++inline size_t release_segment_pool(size_t bytes = SIZE_MAX) {
 +#if defined(__linux__)
 +    auto& pool = conversation_detail::SegmentPool::get();
 +    std::vector<void*> take;
-+    { std::lock_guard<std::mutex> lock(pool.m); take.swap(pool.free); pool.released += take.size(); }
++    {
++        std::lock_guard<std::mutex> lock(pool.m);
++        const size_t seg = conversation_detail::pooled_segment_bytes;
++        const size_t n = bytes == SIZE_MAX ? pool.free.size() : std::min(pool.free.size(), (bytes + seg - 1) / seg);
++        take.assign(pool.free.end() - (ptrdiff_t) n, pool.free.end());
++        pool.free.resize(pool.free.size() - n);
++        pool.released += n;
++    }
 +    for (void* p : take) ::munmap(p, conversation_detail::pooled_segment_bytes);
 +    return take.size() * conversation_detail::pooled_segment_bytes;
 +#else
@@ -67,7 +76,7 @@ diff --color -ru a/include/strata/core/conversation_buffer.hpp b/include/strata/
  // xrig fix (20-Oct): on Linux a segment of 1 MiB or more is its own anonymous mapping, unmapped when freed.
  // From malloc's heap a freed segment never went back to the kernel: HIP locks pageable copies through KFD SVM
  // ranges, and the SVM restore worker faults trimmed (MADV_DONTNEED) heap pages straight back in, so evicting a
-@@ -31,6 +81,12 @@
+@@ -31,6 +90,12 @@
      T* allocate(size_t n) {
  #if defined(__linux__)
          if (n * sizeof(T) >= map_min) {
@@ -80,7 +89,7 @@ diff --color -ru a/include/strata/core/conversation_buffer.hpp b/include/strata/
              void* p = ::mmap(nullptr, n * sizeof(T), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
              if (p == MAP_FAILED) throw std::bad_alloc();
              return static_cast<T*>(p);
-@@ -40,6 +96,12 @@
+@@ -40,6 +105,12 @@
      }
      void deallocate(T* p, size_t n) noexcept {
  #if defined(__linux__)
@@ -96,15 +105,24 @@ diff --color -ru a/include/strata/core/conversation_buffer.hpp b/include/strata/
 diff --color -ru a/src/program/generate.cpp b/src/program/generate.cpp
 --- a/src/program/generate.cpp
 +++ b/src/program/generate.cpp
-@@ -8288,6 +8288,7 @@
-             });
-         // freed images stay in malloc's heap, which MemAvailable does not count
-         auto return_freed_heap = [] {
-+            strata::core::release_segment_pool();   // xrig fix (21-Oct): the pooled segment mappings go back first
- #if defined(__GLIBC__)
-             malloc_trim(0);
- #endif
-@@ -8516,10 +8517,11 @@
+@@ -8304,7 +8304,15 @@
+                 if (strata::core::conversation_memory_admit(mem ? std::optional<uint64_t>(mem->available) : std::nullopt,
+                                                             need, floor))
+                     return true;
+-                if (!trimmed) { return_freed_heap(); trimmed = true; continue; }
++                if (!trimmed) {
++                    // xrig fix (21-Oct): pooled segment mappings first, but only the shortfall, so the rest of the
++                    // pool keeps captures fault-free; then malloc's freed heap
++                    const uint64_t want = need + floor, have = mem ? mem->available : 0;
++                    if (want > have) strata::core::release_segment_pool((size_t) (want - have));
++                    return_freed_heap();
++                    trimmed = true;
++                    continue;
++                }
+                 if (conv_disk.pending()) {
+                     // xrig tier fix: a bounded wait that beats.  A slow disk used to hold the request here for as
+                     // long as its queued writes took (60 s stalls and a watchdog restart on a DRAM-less drive); past
+@@ -8516,10 +8524,11 @@
                  }
                  const size_t snapshot_bytes = image.bytes();
                  const bool stored = to_disk ? conv_disk.put(std::move(image)) : conversations.put(std::move(image), held);
