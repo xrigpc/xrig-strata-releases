@@ -1,0 +1,384 @@
+diff --git a/include/strata/core/conversation_disk.hpp b/include/strata/core/conversation_disk.hpp
+index 76ab5eb3..480fe8aa 100644
+--- a/include/strata/core/conversation_disk.hpp
++++ b/include/strata/core/conversation_disk.hpp
+@@ -12,12 +12,14 @@
+ #include <condition_variable>
+ #include <cstddef>
+ #include <cstdint>
++#include <chrono>
+ #include <deque>
+ #include <functional>
+ #include <mutex>
+ #include <string>
+ #include <system_error>
+ #include <thread>
++#include <utility>
+ #include <vector>
+ 
+ namespace strata::core {
+@@ -27,6 +29,12 @@ struct ConversationDiskOptions {
+     uint64_t budget_bytes = 0;       ///< at most this many bytes of files; 0: off
+     uint64_t min_free_bytes = 0;     ///< a write needs the file plus this much free on the disk (session preflight)
+     bool persist = false;            ///< keep the files for later runs, bound to `identity`
++    /// xrig tier fix: write only conversations of at least this many tokens (0: all).  A short one costs a few seconds
++    /// to read again, so the tier gains little and the disk pays the write.
++    uint64_t min_write_tokens = 0;
++    /// xrig tier fix: at most this many bytes queued for writing per rolling 24 h (0: no limit).  Past it, evicted
++    /// conversations are dropped instead of written, so a busy or periodic client cannot wear the disk out.
++    uint64_t day_write_bytes = 0;
+     SessionFileIdentity identity;    ///< persist: the session files' identity (model and settings fingerprints)
+     /// Called with every diagnostic line (no trailing newline), from the caller's or the writer's thread.
+     std::function<void(const std::string&)> log;
+@@ -38,6 +46,7 @@ struct ConversationDiskOptions {
+ struct ConversationDiskStats {
+     size_t queued = 0, written = 0, write_failed = 0, ram_hits = 0, disk_hits = 0, read_failed = 0;
+     size_t evicted = 0, waits = 0;
++    size_t skipped_short = 0, skipped_covered = 0, skipped_day = 0, wait_timeouts = 0;   ///< xrig tier fix
+     uint64_t bytes_written = 0, bytes_read = 0;
+     uint64_t tokens_back = 0;                 ///< prompt tokens given back (not read again) by ram or disk hits
+     double write_ms = 0, read_ms = 0, wait_ms = 0;
+@@ -115,6 +124,9 @@ public:
+     bool pending() const;
+     /// Blocks until the queue is empty and no write runs.
+     void wait_idle();
++    /// xrig tier fix: like wait_idle() but gives up after `max_ms` (negative: no limit), calling `beat` about every
++    /// 250 ms while it waits so a watchdog sees a wait that moves.  True when the tier went idle.
++    bool wait_idle_for(int64_t max_ms, const std::function<void()>& beat);
+     /// #879: every conversation goes - queued, being written (waited for) and on the disk, files too.  Returns how many.
+     size_t clear();
+ 
+@@ -167,6 +179,11 @@ private:
+     uint64_t clears_ = 0;         ///< clear() calls (xrig fix #4: a read clear() overlapped does not put its entry back)
+     std::thread thread_;
+     ConversationDiskStats stats_;
++    /// xrig tier fix: the write gate (call with m_ held).  Null when the conversation may be queued (it is then
++    /// counted against the daily budget), else why it is not written.
++    const char* write_gate(const ConversationCheckpoint& live, bool cvec, uint64_t bytes);
++    std::deque<std::pair<std::chrono::steady_clock::time_point, uint64_t>> day_writes_;   ///< queued bytes, last 24 h
++    uint64_t day_bytes_ = 0;
+ };
+ 
+ }  // namespace strata::core
+diff --git a/src/core/conversation_disk.cpp b/src/core/conversation_disk.cpp
+index bbf20e4e..c899e15d 100644
+--- a/src/core/conversation_disk.cpp
++++ b/src/core/conversation_disk.cpp
+@@ -446,13 +446,21 @@ bool ConversationDiskTier::put_body(SavedConversation&& image) {
+     size_t depth = 0;
+     uint64_t queued_bytes = 0;
+     const uint64_t estimate = job.entry.bytes;
++    const char* why = nullptr;   // xrig tier fix: the write gate's refusal, if any
+     {
+         std::lock_guard<std::mutex> lock(m_);
+-        job.entry.id = ++next_id_;
+-        queue_.push_back(std::move(job));
+-        ++stats_.queued;   // xrig fix #3: once it is in the queue (a throw above counts as a failed write instead)
+-        depth = queue_.size();
+-        for (const auto& j : queue_) queued_bytes += j.entry.bytes;
++        why = write_gate(job.entry.live, job.entry.cvec, estimate);
++        if (!why) {
++            job.entry.id = ++next_id_;
++            queue_.push_back(std::move(job));
++            ++stats_.queued;   // xrig fix #3: once it is in the queue (a throw above counts as a failed write instead)
++            depth = queue_.size();
++            for (const auto& j : queue_) queued_bytes += j.entry.bytes;
++        }
++    }
++    if (why) {   // not written: the caller drops it, as for a refused write (write_gate counted it)
++        try { log(fmt("not written: %zu tokens, %.0f MiB (%s)", tokens, mib(estimate), why)); } catch (...) {}
++        return false;
+     }
+     cv_.notify_all();
+     try {   // xrig fix #3: queued: a failure to log is not a failed put
+@@ -467,6 +475,13 @@ void ConversationDiskTier::writer() {
+ #if defined(__linux__)
+     // below the serving threads: the write is background work, decode and prompt reading come first
+     setpriority(PRIO_PROCESS, (id_t) syscall(SYS_gettid), 10);
++    // xrig tier fix: the lowest best-effort I/O class too, so the snapshot writes yield the disk to the model's own
++    // reads (--ple-io direct reads the PLE table on the token path).  Best-effort, not idle: idle could starve the
++    // queue, whose images hold RAM until written.  Ignored when the I/O scheduler does not use priorities.
++    {
++        constexpr int ioprio_class_be = 2, ioprio_class_shift = 13, ioprio_who_process = 1;
++        syscall(SYS_ioprio_set, ioprio_who_process, (int) syscall(SYS_gettid), (ioprio_class_be << ioprio_class_shift) | 7);
++    }
+ #endif
+     for (;;) {
+         Job job;
+@@ -538,7 +553,12 @@ bool ConversationDiskTier::put_streamed(SavedConversation& meta,
+         return false;
+     }
+     {
+-        std::lock_guard<std::mutex> lock(m_);
++        std::unique_lock<std::mutex> lock(m_);
++        if (const char* why = write_gate(e.live, e.cvec, e.bytes)) {
++            lock.unlock();
++            log(fmt("not written: %zu tokens, %.0f MiB, streamed (%s)", e.live.ids.size(), mib(e.bytes), why));
++            return false;
++        }
+         e.id = ++next_id_;
+     }
+     std::vector<SavedConversation> parts = std::move(meta.stage_images);
+@@ -798,6 +818,76 @@ void ConversationDiskTier::wait_idle() {
+     log(fmt("waited %.0f ms for %zu queued write%s (their RAM was needed)", ms, depth, depth == 1 ? "" : "s"));
+ }
+ 
++bool ConversationDiskTier::wait_idle_for(int64_t max_ms, const std::function<void()>& beat) {
++    if (max_ms < 0) { wait_idle(); return true; }
++    std::unique_lock<std::mutex> lock(m_);
++    if (queue_.empty() && !writing_) return true;
++    const auto t0 = std::chrono::steady_clock::now();
++    const auto deadline = t0 + std::chrono::milliseconds(max_ms);
++    const size_t depth = queue_.size() + (writing_ ? 1 : 0);
++    bool idle = false;
++    for (;;) {
++        const auto now = std::chrono::steady_clock::now();
++        if (now >= deadline) break;
++        const auto slice = std::min<std::chrono::steady_clock::duration>(deadline - now, std::chrono::milliseconds(250));
++        if (cv_.wait_for(lock, slice, [&] { return queue_.empty() && !writing_; })) { idle = true; break; }
++        if (beat) { lock.unlock(); beat(); lock.lock(); }
++    }
++    const double ms = ms_since(t0);
++    ++stats_.waits;
++    stats_.wait_ms += ms;
++    if (!idle) ++stats_.wait_timeouts;
++    lock.unlock();
++    if (beat) beat();
++    log(idle ? fmt("waited %.0f ms for %zu queued write%s (their RAM was needed)", ms, depth, depth == 1 ? "" : "s")
++             : fmt("gave up waiting after %.0f ms for %zu queued write%s (bound %lld ms): the park is skipped", ms, depth,
++                   depth == 1 ? "" : "s", (long long) max_ms));
++    return idle;
++}
++
++// The disk (or the queue) already holds exactly the state `want`, as an entry's live state or as one of its
++// checkpoints: the same tokens and images and control-vector state.  Then writing `want` adds nothing, because every
++// prompt it could serve (conversation_prefix: its tokens are a prefix of the prompt) that state serves as well.  A
++// LONGER entry is not enough: a prompt that leaves it after `want`'s end does not match its live state.
++static bool same_state(const ConversationCheckpoint& a, const ConversationCheckpoint& b) {
++    return !a.ids.empty() && a.ids == b.ids && a.imgs == b.imgs;
++}
++
++const char* ConversationDiskTier::write_gate(const ConversationCheckpoint& live, bool cvec, uint64_t bytes) {
++    if (options_.min_write_tokens && live.ids.size() < options_.min_write_tokens) {
++        ++stats_.skipped_short;
++        return "under the minimum tokens for a write";
++    }
++    auto has_state = [&](const Entry& e) {
++        if (e.cvec != cvec) return false;
++        if (same_state(e.live, live)) return true;
++        for (const auto& c : e.checkpoints)
++            if (same_state(c, live)) return true;
++        return false;
++    };
++    bool covered = writing_ && has_state(writing_entry_);
++    for (const auto& e : entries_) covered = covered || has_state(e);
++    for (const auto& j : queue_) covered = covered || has_state(j.entry);
++    if (covered) {
++        ++stats_.skipped_covered;
++        return "the disk already holds it";
++    }
++    if (options_.day_write_bytes) {
++        const auto now = std::chrono::steady_clock::now();
++        while (!day_writes_.empty() && now - day_writes_.front().first > std::chrono::hours(24)) {
++            day_bytes_ -= day_writes_.front().second;
++            day_writes_.pop_front();
++        }
++        if (day_bytes_ + bytes > options_.day_write_bytes) {
++            ++stats_.skipped_day;
++            return "over the daily write budget";
++        }
++        day_writes_.emplace_back(now, bytes);
++        day_bytes_ += bytes;
++    }
++    return nullptr;
++}
++
+ size_t ConversationDiskTier::size() const {
+     std::lock_guard<std::mutex> lock(m_);
+     return entries_.size();
+diff --git a/src/core/conversation_disk_test.cpp b/src/core/conversation_disk_test.cpp
+index 1e039153..aa2b213a 100644
+--- a/src/core/conversation_disk_test.cpp
++++ b/src/core/conversation_disk_test.cpp
+@@ -584,6 +584,65 @@ int main() {
+         }
+     }
+ 
++    {   // xrig tier fix: wait_idle_for gives up after its bound and beats meanwhile; the write still ends later
++        std::promise<void> release;
++        std::shared_future<void> gate = release.get_future().share();
++        auto o = opts(dir, GiB);
++        o.before_write = [gate] { gate.wait(); };
++        ConversationDiskTier tier(std::move(o));
++        check(tier.open(e) && tier.put(image(400, 50)), "bounded wait: a write held");
++        int beats = 0;
++        const bool idle = tier.wait_idle_for(600, [&beats] { ++beats; });
++        check(!idle && beats >= 2 && tier.pending(), "bounded wait: gives up after the bound, beating meanwhile");
++        check(tier.stats().wait_timeouts == 1 && logged("gave up waiting"), "bounded wait: counted and logged");
++        release.set_value();
++        check(tier.wait_idle_for(-1, nullptr) && !tier.pending() && tier.size() == 1,
++              "bounded wait: no limit (-1) waits like wait_idle; the held write ended");
++        check(tier.wait_idle_for(10, nullptr), "bounded wait: an idle tier returns at once");
++        tier.clear();
++    }
++
++    {   // xrig tier fix: the write gate - short conversations are not written
++        auto o = opts(dir, GiB);
++        o.min_write_tokens = 500;
++        ConversationDiskTier tier(std::move(o));
++        check(tier.open(e) && !tier.put(image(400, 51)), "min tokens: a 400-token conversation is not written");
++        check(tier.put(image(600, 52, 9000)), "min tokens: a 600-token one is");
++        tier.wait_idle();
++        check(tier.size() == 1 && tier.stats().skipped_short == 1 && logged("under the minimum tokens"),
++              "min tokens: counted and logged");
++        tier.clear();
++    }
++
++    {   // xrig tier fix: the same state already on the disk (live or a checkpoint) is not written again; a longer
++        // entry alone does not count (conversation_prefix needs the stored tokens to be a prefix of the prompt)
++        ConversationDiskTier tier(opts(dir, GiB));
++        check(tier.open(e) && tier.put(image(400, 53)), "same state: the first copy is written");
++        tier.wait_idle();
++        check(!tier.put(image(400, 54)) && tier.stats().skipped_covered == 1 && logged("the disk already holds it"),
++              "same state: the same 400 tokens again are not written");
++        check(!tier.put(image(200, 55)), "same state: a state equal to the entry's checkpoint is not written");
++        check(tier.put(image(300, 56)), "same state: a shorter state that is no checkpoint of it IS written");
++        check(tier.put(image(800, 57)), "same state: a longer one is written");
++        tier.wait_idle();
++        check(tier.size() == 3, "same state: three entries on the disk");
++        tier.clear();
++    }
++
++    {   // xrig tier fix: the daily write budget
++        const uint64_t one = image(400, 58).bytes();
++        auto o = opts(dir, GiB);
++        o.day_write_bytes = one * 2 + one / 2;   // room for two
++        ConversationDiskTier tier(std::move(o));
++        check(tier.open(e) && tier.put(image(400, 58, 1000)) && tier.put(image(400, 59, 3000)),
++              "day budget: two writes fit");
++        check(!tier.put(image(400, 60, 5000)) && tier.stats().skipped_day == 1 && logged("over the daily write budget"),
++              "day budget: the third is not written, counted and logged");
++        tier.wait_idle();
++        check(tier.size() == 2, "day budget: two entries on the disk");
++        tier.clear();
++    }
++
+     fs::remove_all(dir);
+     std::printf("conversation_disk_test: %d checks passed\n", checks);
+     return 0;
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 50a6618b..2ab7e458 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -8243,6 +8243,24 @@ int main(int argc, char** argv) {
+         disk_opts.dir = conversations.enabled() ? o.conversation_disk_dir : std::string();
+         disk_opts.budget_bytes = (uint64_t) o.conversation_disk_mib << 20;
+         disk_opts.min_free_bytes = (uint64_t) o.session_min_free_mib << 20;
++        // xrig tier fix: the write gate and the park's wait bound.  Environment, not flags, so a launcher sets them
++        // without a new command line: STRATA_CONV_DISK_MIN_TOKENS (default 16384; 0 writes every eviction),
++        // STRATA_CONV_DISK_DAY_MIB (default 0: no daily limit), STRATA_CONV_DISK_WAIT_MS (default 2000; -1 waits as
++        // long as the writes take, the old behaviour).
++        auto env_i64 = [](const char* name, int64_t fallback) -> int64_t {
++            const char* v = std::getenv(name);
++            if (!v || !*v) return fallback;
++            char* end = nullptr;
++            const long long x = std::strtoll(v, &end, 10);
++            return (end && *end == '\0') ? (int64_t) x : fallback;
++        };
++        disk_opts.min_write_tokens = (uint64_t) std::max<int64_t>(0, env_i64("STRATA_CONV_DISK_MIN_TOKENS", 16384));
++        disk_opts.day_write_bytes = (uint64_t) std::max<int64_t>(0, env_i64("STRATA_CONV_DISK_DAY_MIB", 0)) << 20;
++        const uint64_t disk_opts_min_tokens = disk_opts.min_write_tokens, disk_opts_day_mib = disk_opts.day_write_bytes >> 20;
++        const int64_t disk_wait_ms = env_i64("STRATA_CONV_DISK_WAIT_MS", 2000);
++        // review (lane): a restore that gives up falls back to reading the whole prompt again (~75 s at 100K+ vs a
++        // disk restore's 8-12 s), so restores wait longer than parks; both beat, which is what the watchdog needs
++        const int64_t disk_restore_wait_ms = env_i64("STRATA_CONV_DISK_RESTORE_WAIT_MS", 30000);
+         if (o.conversation_disk_persist != "off" && !disk_opts.dir.empty()) {
+             // the session files' identity: a later start with the same model and settings takes the files in
+             std::string id_err;
+@@ -8259,6 +8277,10 @@ int main(int argc, char** argv) {
+                                  "(--conversation-cache-mib, --conversation-cache-slots, --prompt-cache): off\n");
+         if (std::string disk_err; !conv_disk.open(disk_err))
+             std::fprintf(stderr, "strata serve: conversation disk tier off: %s\n", disk_err.c_str());
++        else if (conv_disk.enabled())
++            std::fprintf(stderr, "strata serve: conversation disk: write gate min_tokens=%llu day_mib=%llu park_wait_ms=%lld restore_wait_ms=%lld\n",
++                         (unsigned long long) disk_opts_min_tokens, (unsigned long long) disk_opts_day_mib,
++                         (long long) disk_wait_ms, (long long) disk_restore_wait_ms);
+         bool disk_writes = conv_disk.enabled() && o.conversation_disk_persist != "exit-only";   // none until QUIT
+         if (conv_disk.enabled())
+             conversations.set_on_evict([&conv_disk, &disk_writes](strata::core::SavedConversation&& image) {
+@@ -8273,8 +8295,9 @@ int main(int argc, char** argv) {
+         // Room in RAM for `need` more bytes above `floor`: malloc's freed heap first, then the disk tier's queued
+         // writes (their RAM comes back), then the RAM cache's oldest conversations.  `mem` keeps the last reading
+         // for the caller's message.
++        bool disk_busy = false;   // xrig tier fix: make_ram gave up on the disk's queued writes (bounded wait)
+         auto make_ram = [&](uint64_t need, uint64_t floor, size_t& evicted,
+-                            std::optional<strata::core::HostMemoryReading>& mem) -> bool {
++                            std::optional<strata::core::HostMemoryReading>& mem, int64_t wait_ms) -> bool {
+             bool trimmed = false;
+             for (;;) {
+                 mem = strata::core::sample_host_memory();
+@@ -8282,7 +8305,17 @@ int main(int argc, char** argv) {
+                                                             need, floor))
+                     return true;
+                 if (!trimmed) { return_freed_heap(); trimmed = true; continue; }
+-                if (conv_disk.pending()) { conv_disk.wait_idle(); trimmed = false; continue; }
++                if (conv_disk.pending()) {
++                    // xrig tier fix: a bounded wait that beats.  A slow disk used to hold the request here for as
++                    // long as its queued writes took (60 s stalls and a watchdog restart on a DRAM-less drive); past
++                    // the bound the park is skipped instead (a cache miss, not an outage).
++                    if (!conv_disk.wait_idle_for(wait_ms, [] { strata::core::progress_beat(); })) {
++                        disk_busy = true;
++                        return false;
++                    }
++                    trimmed = false;
++                    continue;
++                }
+                 if (conversations.size() == 0 || evicted >= conversations.slots() || !conversations.evict_oldest())
+                     return false;
+                 ++evicted;
+@@ -8441,8 +8474,15 @@ int main(int argc, char** argv) {
+                 // (MemAvailable, the cgroup limits above the engine, --memory-limit-mib).
+                 size_t evicted = 0;
+                 std::optional<strata::core::HostMemoryReading> mem;
+-                if (!make_ram(additional, floor, evicted, mem)) {
+-                    if (disk_writes && park_streamed()) return true;
++                disk_busy = false;
++                if (!make_ram(additional, floor, evicted, mem, disk_wait_ms)) {
++                    // xrig tier fix: a disk still busy past the bound takes no streamed park either
++                    if (disk_writes && !disk_busy && park_streamed()) return true;
++                    if (disk_busy)   // review (lane): say why - the disk's queued writes, not the RAM reading
++                        std::fprintf(stderr, "strata serve: conversation cache: skip parking (disk busy: its queued writes did not end within %lld ms; need %zu MiB plus %lld MiB floor, %s; %zu still parked)\n",
++                                     (long long) disk_wait_ms, additional >> 20, (long long) o.conversation_cache_min_free_mib,
++                                     ram_note(mem).c_str(), conversations.size());
++                    else
+                     std::fprintf(stderr, "strata serve: conversation cache: skip parking (physical RAM admission; need %zu MiB plus %lld MiB floor, %s; evicted %zu, %zu still parked)\n",
+                                  additional >> 20, (long long) o.conversation_cache_min_free_mib, ram_note(mem).c_str(),
+                                  evicted, conversations.size());
+@@ -11110,7 +11150,8 @@ int main(int argc, char** argv) {
+                     // asks), not the bare file bytes - a borderline image passed the probe, then failed the read's
+                     // admission and was lost instead of streamed.
+                     if (!on_disk.queued &&
+-                        !make_ram(strata::core::session_read_peak_bytes(on_disk.bytes), floor, evicted, room))
++                        !make_ram(strata::core::session_read_peak_bytes(on_disk.bytes), floor, evicted, room,
++                                  disk_restore_wait_ms))
+                         stream = on_disk;
+                 }
+                 if (stream.id == 0 && on_disk.tokens > std::max({resume, slot_tokens, parked.tokens})) {
+@@ -11118,7 +11159,7 @@ int main(int argc, char** argv) {
+                     size_t evicted = 0;
+                     auto admit = [&](uint64_t need, std::string& why) -> bool {
+                         std::optional<strata::core::HostMemoryReading> mem;
+-                        if (make_ram(need, floor, evicted, mem)) return true;
++                        if (make_ram(need, floor, evicted, mem, disk_restore_wait_ms)) return true;
+                         why = "not enough RAM: " + ram_note(mem);
+                         return false;
+                     };
+@@ -11253,7 +11294,7 @@ int main(int argc, char** argv) {
+                 size_t evicted = 0;
+                 auto admit = [&](uint64_t need, std::string& why) -> bool {
+                     std::optional<strata::core::HostMemoryReading> mem;
+-                    if (make_ram(need, floor, evicted, mem)) return true;
++                    if (make_ram(need, floor, evicted, mem, disk_restore_wait_ms)) return true;
+                     why = "not enough RAM even for the running state: " + ram_note(mem);
+                     return false;
+                 };
