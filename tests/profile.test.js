@@ -2,7 +2,7 @@ const {execFileSync} = require('child_process');
 const fs = require('fs'), path = require('path');
 const root = path.resolve(__dirname, '..');
 const fail = m => { throw new Error(m); };
-for (const profile of ['profiles/rx7900xtx-64g-strata-gfx1100.json', 'profiles/rx7900xtx-64g-strata044-ssd-gfx1100.json']) {
+for (const profile of ['profiles/rx7900xtx-64g-strata-gfx1100.json', 'profiles/rx7900xtx-64g-strata044-ssd-gfx1100.json', 'profiles/rx7900xtx-64g-strata044-ssd-node-fixes-gfx1100.json']) {
   execFileSync('node', ['scripts/profile.js', profile], {cwd: root, stdio: 'inherit'});
   const p = JSON.parse(fs.readFileSync(path.join(root, profile)));
   if (p.engine_args.kv !== 'int8' || p.engine_args.spec !== 4 || p.engine_args.prefill !== 16384) fail('locked parameters changed');
