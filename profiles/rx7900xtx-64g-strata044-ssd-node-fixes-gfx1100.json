@@ -141,7 +141,7 @@
     "max_context": 262144,
     "kv": "int8",
     "kv_resident": 32768,
-    "vram_reserve_mib": 700,
+    "vram_reserve_mib": 896,
     "vision": {
       "enabled": true,
       "gpu": false,
