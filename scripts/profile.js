@@ -17,13 +17,9 @@ if (p.platform?.os !== 'linux' || p.platform?.arch !== 'amd64' || !/^gfx[0-9a-f]
 if (!/^docker\.io\/library\/ubuntu:[0-9.]+@sha256:[a-f0-9]{64}$/.test(p.build_image || '')) die('build_image must be a digest-pinned ubuntu image');
 
 const s = p.source || {};
-if (s.strata_repo !== 'https://github.com/Niko1221/Strata.git' || !commit(s.strata_commit) || !/^[0-9]+(\.[0-9]+){2,3}$/.test(s.strata_version || '')) die('invalid Strata source pin');
+require('./source-pin').checkSource(s);
 if (!commit(s.llama_cpp_commit) || s.llama_cpp_zip_url !== `https://github.com/ggml-org/llama.cpp/archive/${s.llama_cpp_commit}.zip` || !sha(s.llama_cpp_zip_sha256) || !size(s.llama_cpp_zip_size_bytes)) die('invalid llama.cpp source pin');
 
-if (s.patches !== undefined) {
-  if (!Array.isArray(s.patches) || !s.patches.length || !s.patches.every(x => /^patches\/[A-Za-z0-9_.-]+\.patch$/.test(x.file || '') && sha(x.sha256))) die('invalid source.patches');
-  if (!/^[a-f0-9]{40}$/.test(s.expected_tree || '')) die('source.patches requires source.expected_tree (git write-tree)');
-}
 if (p.unit_tests !== undefined && (!Array.isArray(p.unit_tests) || !p.unit_tests.every(u => /^[a-z0-9_]+$/.test(u.target || '') && Number.isSafeInteger(u.checks) && u.checks > 0))) die('invalid unit_tests');
 
 const t = p.therock || {};
