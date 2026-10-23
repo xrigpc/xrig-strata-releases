@@ -86,6 +86,10 @@ const config = {
   client: c.client, policy: c.policy,
 };
 for (const k of ['pcie_frac', 'adapt', 'draft', 'placement']) if (e[k] !== undefined) config.runtime.strata[k] = e[k];
+// runtime.strata.env exists only in schema 4; a profile without it publishes schema 3 as before.
+const schemaVersion = e.env !== undefined ? 4 : 3;
+config.schema_version = schemaVersion;
+if (e.env !== undefined) config.runtime.strata.env = e.env;
 if (p.sampling) config.runtime.sampling = p.sampling;
 
 fs.mkdirSync(args.out, { recursive: true });
@@ -94,7 +98,7 @@ write('stack.json', descriptor);
 write('config.json', config);
 const configPath = path.join(args.out, 'config.json');
 write('catalogue-row.json', {
-  id: c.id, config_version: revision, schema_version: 3, status: c.status, vendor: c.compatibility.vendor,
+  id: c.id, config_version: revision, schema_version: schemaVersion, status: c.status, vendor: c.compatibility.vendor,
   gpu_tags: c.compatibility.gpu_match, os: c.compatibility.os, backend: c.compatibility.backend,
   min_vram_gb: c.compatibility.min_vram_gb, min_ram_gb: c.compatibility.min_ram_gb,
   config_url: `${metaBase}/configs/${c.id}/${revision}.json`, config_sha256: sha(configPath),

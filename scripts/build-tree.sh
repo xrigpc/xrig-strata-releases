@@ -47,15 +47,14 @@ config="$tree/configs/$config_id/$revision.json"
 cp "$assembled/config.json" "$config"
 "$here/sign-artifact.sh" "$config"
 
-node - "$tree/catalogues/v3/index.json" "${EXISTING_CATALOGUE:-}" "$assembled/catalogue-row.json" "$base" "$config" <<'NODE'
-const fs=require('fs'),crypto=require('crypto');const [out,existing,rowFile,base,config]=process.argv.slice(2);
-let rows=existing&&fs.existsSync(existing)?JSON.parse(fs.readFileSync(existing)):[];
-if(!Array.isArray(rows))throw Error('existing catalogues/v3 index is invalid');
+node - "$tree/catalogues/v3/index.json" "${EXISTING_CATALOGUE:-}" "$assembled/catalogue-row.json" "$base" "$config" "$here/catalogue-merge.js" <<'NODE'
+const fs=require('fs'),crypto=require('crypto');const [out,existing,rowFile,base,config,mergeJs]=process.argv.slice(2);
+const rows=existing&&fs.existsSync(existing)?JSON.parse(fs.readFileSync(existing)):[];
 const row=JSON.parse(fs.readFileSync(rowFile));
 row.config_url=`${base}/configs/${row.id}/${row.config_version}.json`;
 row.config_sha256=crypto.createHash('sha256').update(fs.readFileSync(config)).digest('hex');
-rows=rows.filter(r=>r.id!==row.id);rows.push(row);
-fs.writeFileSync(out,JSON.stringify(rows,null,2)+'\n');
+const merged=require(mergeJs).merge(rows,row,{dropSchema4:process.env.DROP_SCHEMA4_ROW==='1'});
+fs.writeFileSync(out,JSON.stringify(merged,null,2)+'\n');
 NODE
 
 if [[ $with_stack == 1 ]]; then

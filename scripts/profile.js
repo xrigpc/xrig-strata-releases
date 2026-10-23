@@ -68,6 +68,18 @@ if (e.kv !== 'int8' || e.spec !== 4 || e.prefill !== 16384 || ![131072, 262144].
     die('engine_args tuning values out of range');
 }
 
+// env (optional): engine_args.env becomes runtime.strata.env, which only schema 4 configurations carry (Vertex reads
+// schema 4 from the release after 1.1.0-rc.8; builds that know only schema 3 skip those rows). The ranges are Vertex's.
+if (e.env !== undefined) {
+  const v = e.env, keys = ['watchdog_s', 'malloc_arena_max', 'hsa_userptr_for_paged_mem', 'pinned_staging_only'];
+  const intIn = (x, lo, hi) => x === undefined || (Number.isSafeInteger(x) && x >= lo && x <= hi);
+  if (v === null || typeof v !== 'object' || Array.isArray(v) || !Object.keys(v).length || Object.keys(v).some(k => !keys.includes(k)))
+    die('engine_args.env: unknown field or no field');
+  if (!intIn(v.watchdog_s, 60, 600) || !intIn(v.malloc_arena_max, 1, 16) || !intIn(v.hsa_userptr_for_paged_mem, 0, 1) ||
+      (v.pinned_staging_only !== undefined && v.pinned_staging_only !== true))
+    die('engine_args.env values out of range (pinned_staging_only must be true or absent)');
+}
+
 // sampling (optional): runtime.sampling, Strata's defaults for requests that leave those fields out
 // (Vertex accepts it for Strata from the release after 1.1.0-rc.5; the ranges are Vertex's)
 if (p.sampling !== undefined) {

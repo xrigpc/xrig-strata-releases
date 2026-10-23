@@ -1,5 +1,5 @@
 {
   "name": "xrig-strata-releases",
   "private": true,
-  "scripts": { "test": "node tests/profile.test.js" }
+  "scripts": { "test": "node tests/profile.test.js && node tests/catalogue-merge.test.js" }
 }

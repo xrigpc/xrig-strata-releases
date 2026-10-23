@@ -10,6 +10,8 @@ for (const profile of ['profiles/rx7900xtx-64g-strata-gfx1100.json', 'profiles/r
   if (p.qualification.levels.some(l => l + 100 > p.engine_args.max_context)) fail('qualification level exceeds the context');
   if (p.config.client.integrations.context_tokens !== p.engine_args.max_context) fail('client context differs from the engine context');
   if (p.source.strata_version === '0.1.43.1' && p.sampling) fail('the 0.1.43.1 lane must not carry sampling: Vertex 1.1.0-rc.5 and earlier refuse it');
+  if (p.source.strata_version === '0.1.43.1' && p.engine_args.env !== undefined)
+    fail('the 0.1.43.1 lane must not carry engine env: Vertex launches it on 0.1.44.1+ stacks only');
   if (p.source.strata_version === '0.1.43.1' && ['pcie_frac', 'adapt', 'draft', 'placement'].some(k => p.engine_args[k] !== undefined))
     fail('the 0.1.43.1 lane must not carry engine tuning: Vertex launches it on 0.1.44.1+ stacks only');
 }
@@ -113,7 +115,45 @@ const tuned = assemble(writeProfile('tuned', () => {}), 'tuned');
 const {pcie_frac, adapt, draft, placement, ...rest} = tuned;
 if (JSON.stringify(rest) !== JSON.stringify(plain) || JSON.stringify({pcie_frac, adapt, draft, placement}) !== JSON.stringify(tuning))
   fail('tuned runtime.strata differs from the profile');
-fs.rmSync(tmp, { recursive: true, force: true });
 const publisher = fs.readFileSync(path.join(root, 'scripts/publish-supabase.sh'), 'utf8');
 if (/catalogues\/v2|stacks\/v1/.test(publisher.replace(/^#.*$/mg, ''))) fail('publisher must never write v1/v2 feeds read by older Vertex builds');
 console.log('profile contract passed');
+
+// Engine env: profile.js range-checks it as Vertex does; a profile with it assembles a schema 4 configuration and row
+// with runtime.strata.env, and a profile without it stays schema 3.
+{
+  const envProfile = (name, env) => {
+    const p = JSON.parse(JSON.stringify(node));
+    p.engine_args.env = env;
+    const file = path.join(tmp, name + '.json');
+    fs.writeFileSync(file, JSON.stringify(p, null, 2));
+    return file;
+  };
+  const okEnv = { all: { watchdog_s: 180, malloc_arena_max: 4, hsa_userptr_for_paged_mem: 0, pinned_staging_only: true },
+    low: { watchdog_s: 60, malloc_arena_max: 1, hsa_userptr_for_paged_mem: 0 }, high: { watchdog_s: 600, malloc_arena_max: 16, hsa_userptr_for_paged_mem: 1 } };
+  for (const [name, env] of Object.entries(okEnv)) if (!validates(envProfile('env-ok-' + name, env))) fail(`env ${name} must validate`);
+  const badEnv = { empty: {}, list: [1], watchdog59: { watchdog_s: 59 }, watchdog601: { watchdog_s: 601 }, arena0: { malloc_arena_max: 0 },
+    arena17: { malloc_arena_max: 17 }, userptr2: { hsa_userptr_for_paged_mem: 2 }, pinnedFalse: { pinned_staging_only: false },
+    pinnedSize: { gpu_pinned_min_xfer_size: 1048576 }, raw: { STRATA_WATCHDOG_S: 120 }, preload: { LD_PRELOAD: '/tmp/x.so' },
+    string: { watchdog_s: '120' } };
+  for (const [name, env] of Object.entries(badEnv)) if (validates(envProfile('env-bad-' + name, env))) fail(`env ${name} must be refused`);
+  const run = (profile, out) => {
+    execFileSync('node', ['scripts/assemble-config-revision.js', '--profile', profile, '--base-config', baseFile, '--config-revision', '2026.01.03-env',
+      '--metadata-base', 'https://example.invalid', '--out', path.join(tmp, out)], {cwd: root, stdio: 'pipe'});
+    return { config: JSON.parse(fs.readFileSync(path.join(tmp, out, 'config.json'))), row: JSON.parse(fs.readFileSync(path.join(tmp, out, 'catalogue-row.json'))) };
+  };
+  const withEnv = run(envProfile('env-assemble', { watchdog_s: 180, malloc_arena_max: 4 }), 'env');
+  if (withEnv.config.schema_version !== 4 || withEnv.row.schema_version !== 4 ||
+      JSON.stringify(withEnv.config.runtime.strata.env) !== JSON.stringify({ watchdog_s: 180, malloc_arena_max: 4 })) fail('env must assemble schema 4');
+  const { env, ...withoutEnvStrata } = withEnv.config.runtime.strata;
+  if (JSON.stringify(withoutEnvStrata) !== JSON.stringify(plain)) fail('env changed other runtime.strata fields');
+  const noEnv = run(path.join(root, 'profiles/rx7900xtx-64g-strata044-ssd-gfx1100.json'), 'noenv');
+  if (noEnv.config.schema_version !== 3 || noEnv.row.schema_version !== 3 || 'env' in noEnv.config.runtime.strata) fail('a profile without env must stay schema 3');
+  // A schema 4 base revision is accepted as the base of the next revision.
+  const base4 = path.join(tmp, 'base4.json');
+  fs.writeFileSync(base4, JSON.stringify({ ...JSON.parse(fs.readFileSync(baseFile)), schema_version: 4 }));
+  execFileSync('node', ['scripts/assemble-config-revision.js', '--profile', envProfile('env-next', { watchdog_s: 120 }), '--base-config', base4,
+    '--config-revision', '2026.01.04-env', '--metadata-base', 'https://example.invalid', '--out', path.join(tmp, 'env4')], {cwd: root, stdio: 'pipe'});
+}
+console.log('engine env tests passed');
+fs.rmSync(tmp, { recursive: true, force: true });
