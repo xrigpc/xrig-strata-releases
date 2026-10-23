@@ -54,13 +54,11 @@ if ref=$(f source.strata_ref); then
   tree=$(git -C "$src" rev-parse 'HEAD^{tree}')
   [[ "$tree" == "$(f source.expected_tree)" ]] || { echo "Strata tree $tree differs from source.expected_tree" >&2; exit 1; }
   echo "Strata tree $tree verified"
-  if tags=$(git ls-remote "$repo" "refs/tags/$ref" "refs/tags/$ref^{}" 2>/dev/null); then
-    tagged=$(awk -v r="refs/tags/$ref" '$2 == r "^{}" { p = $1 } $2 == r { l = $1 } END { print (p != "" ? p : l) }' <<< "$tags")
-    [[ "$tagged" == "$commit" ]] || { echo "tag $ref is '${tagged:-missing}' on $repo, not the pinned $commit" >&2; exit 1; }
-    echo "tag $ref verified"
-  else
-    echo "warning: $repo not reachable, tag $ref not checked (the commit and tree pins hold)" >&2
-  fi
+  # The fetch above already needs GitHub, so the tag is always checked.
+  tags=$(git ls-remote "$repo" "refs/tags/$ref" "refs/tags/$ref^{}")
+  tagged=$(awk -v r="refs/tags/$ref" '$2 == r "^{}" { p = $1 } $2 == r { l = $1 } END { print (p != "" ? p : l) }' <<< "$tags")
+  [[ "$tagged" == "$commit" ]] || { echo "tag $ref is '${tagged:-missing}' on $repo, not the pinned $commit" >&2; exit 1; }
+  echo "tag $ref verified"
 fi
 patches=$(node -e 'const p=require(require("path").resolve(process.argv[1]));for(const x of (p.source.patches||[]))console.log(x.file,x.sha256)' "$profile")
 if [[ -n "$patches" ]]; then

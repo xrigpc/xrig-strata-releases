@@ -31,7 +31,7 @@ A profile pins the Strata source one of two ways (`scripts/source-pin.js`, check
 - **Fork tag (new engines):** `strata_repo` `https://github.com/xrigpc/Strata.git`, `strata_ref` an
   `engine/<strata_version>-<name>` tag, `strata_commit` the commit it names, and `expected_tree` (always). No
   `patches`: the changes are commits in the fork. `fetch-inputs.sh` fetches the commit, checks it, its tree and the
-  version, and fails if the tag on GitHub names another commit (it only warns when GitHub can't be reached).
+  version, and fails if the tag on GitHub is missing or names another commit.
 - **Upstream commit + patch files (the lanes that already shipped):** `strata_repo` `Niko1221/Strata`, the commit,
   optional `patches` and then `expected_tree`. Kept as is, so what shipped can be rebuilt byte for byte.
 
