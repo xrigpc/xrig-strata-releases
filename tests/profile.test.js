@@ -45,6 +45,60 @@ for (const bad of ['', 'on', '7,', '7,,8', '7 8', '24-27', '07', '7;rm', 'auto,7
   rejected[`aux_cpus ${JSON.stringify(bad)}`] = e => { e.placement.aux_cpus = bad; };
 for (const [name, edit] of Object.entries(rejected)) if (validates(writeProfile('bad-' + name.replace(/\W/g, '_'), edit))) fail(`tuning ${name} must be refused`);
 
+// Source pins: upstream Strata at a commit (+ patches), or an engine tag of the xrigpc/Strata fork (no patches, tree
+// always). A release records upstream sources exactly as before, fork sources with their tag and tree.
+{
+  const forkFiles = ['profiles/rx7900xtx-64g-strata044-fork-node3-gfx1100.json', 'profiles/rx7900xtx-64g-strata044-fork-a-gfx1100.json'];
+  for (const f of forkFiles) if (!validates(path.join(root, f))) fail(`${f} must validate`);
+  const fork = JSON.parse(fs.readFileSync(path.join(root, forkFiles[1])));
+  const sourceProfile = (name, from, edit) => {
+    const p = JSON.parse(JSON.stringify(from));
+    edit(p.source);
+    const file = path.join(tmp, 'src-' + name + '.json');
+    fs.writeFileSync(file, JSON.stringify(p, null, 2));
+    return file;
+  };
+  const okSource = { fork: [fork, () => {}], upstream: [node, () => {}],
+    upstreamNoPatches: [node, s => { delete s.patches; delete s.expected_tree; }] };
+  for (const [name, [from, edit]] of Object.entries(okSource)) if (!validates(sourceProfile(name, from, edit))) fail(`source ${name} must validate`);
+  const badSource = {
+    forkNoTree: [fork, s => { delete s.expected_tree; }], forkPatches: [fork, s => { s.patches = node.source.patches; }],
+    forkNoRef: [fork, s => { delete s.strata_ref; }], forkBranchRef: [fork, s => { s.strata_ref = 'xrig/v0.1.44-a'; }],
+    forkOtherVersion: [fork, s => { s.strata_ref = 'engine/0.1.45-a-rc1'; }], forkShortCommit: [fork, s => { s.strata_commit = '1242d231'; }],
+    unknownRepo: [node, s => { s.strata_repo = 'https://github.com/someone/Strata.git'; }],
+    unknownRepoForkShaped: [fork, s => { s.strata_repo = 'https://github.com/someone/Strata.git'; }],
+    upstreamRef: [node, s => { s.strata_ref = 'engine/0.1.44.1-node.3'; }], upstreamPatchesNoTree: [node, s => { delete s.expected_tree; }],
+  };
+  for (const [name, [from, edit]] of Object.entries(badSource)) if (validates(sourceProfile(name, from, edit))) fail(`source ${name} must be refused`);
+
+  // assemble-release.js on tiny dummy artifacts: only the descriptor's source block is checked.
+  const assembleSource = (profileFile, out) => {
+    const p = JSON.parse(fs.readFileSync(profileFile)), dir = path.join(tmp, out), rt = path.join(dir, 'rt'), data = path.join(dir, 'data');
+    fs.mkdirSync(rt, { recursive: true }); fs.mkdirSync(data);
+    fs.writeFileSync(path.join(rt, p.asset_prefix + '-test.tar.gz'), 'runtime');
+    const need = ['runtime/python/bin/python3.12', 'runtime/strata/engine/strata', 'runtime/strata/engine/strata-vision', 'runtime/strata/serve/server.py',
+      'runtime/strata/' + p.engine_args.expert_profile, 'runtime/strata/' + p.engine_args.hipblaslt_tuning];
+    fs.writeFileSync(path.join(rt, 'runtime-files.sha256'), need.map(n => '0'.repeat(64) + '  ' + n).join('\n') + '\n');
+    for (const role of ['pack', 'mtp']) {
+      const asset = `test-${role}.tar.gz`, bytes = Buffer.from(role);
+      fs.writeFileSync(path.join(data, asset), bytes);
+      fs.writeFileSync(path.join(data, `test-${role}-x.files.json`), JSON.stringify({ asset_name: asset, size_bytes: bytes.length, files: [],
+        sha256: require('crypto').createHash('sha256').update(bytes).digest('hex') }));
+    }
+    fs.writeFileSync(path.join(dir, 'q.json'), JSON.stringify({ passed: true, gpu_arch: p.platform.gpu_arch, model: p.model.model_name }));
+    execFileSync('node', ['scripts/assemble-release.js', '--profile', profileFile, '--runtime-dir', rt, '--data-dir', data, '--qualification', path.join(dir, 'q.json'),
+      '--release-tag', 'test-tag', '--config-revision', '2026.01.05-test', '--asset-base', 'https://example.invalid/a', '--metadata-base', 'https://example.invalid/m',
+      '--out', path.join(dir, 'out')], {cwd: root, stdio: 'pipe'});
+    return JSON.parse(fs.readFileSync(path.join(dir, 'out', 'stack.json'))).source;
+  };
+  const legacy = assembleSource(path.join(root, 'profiles/rx7900xtx-64g-strata044-ssd-gfx1100.json'), 'asm-legacy');
+  if (Object.keys(legacy).join() !== 'strata_repo,strata_commit,strata_version,llama_cpp_commit,therock_version,python_version,build_image' ||
+      legacy.strata_repo !== node.source.strata_repo || legacy.strata_commit !== node.source.strata_commit) fail('an upstream source must be recorded as before');
+  const forked = assembleSource(path.join(root, forkFiles[1]), 'asm-fork');
+  if (forked.strata_repo !== 'https://github.com/xrigpc/Strata.git' || forked.strata_ref !== fork.source.strata_ref ||
+      forked.strata_commit !== fork.source.strata_commit || forked.expected_tree !== fork.source.expected_tree) fail('a fork source must be recorded with its tag and tree');
+}
+
 const baseFile = path.join(tmp, 'base.json');
 fs.writeFileSync(baseFile, JSON.stringify({ schema_version: 3, id: node.config.id, version: '2026.01.01-base',
   model: { alias: node.model.model_name }, runtime: { engine: 'strata', ref: { stack_id: node.stack_id, version: 'v1' } } }));

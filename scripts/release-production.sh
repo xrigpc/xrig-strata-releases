@@ -38,8 +38,9 @@ node "$here/assemble-release.js" --profile "$profile" --runtime-dir "$runtime" -
 
 cp "$qualification" "$work/qualification.json"; "$here/sign-artifact.sh" "$work/qualification.json"
 mapfile -t assets < <(find "$work/tree/releases/$tag" -type f | sort)
+strata_ref=$(node "$here/profile.js" "$profile" source.strata_ref || true)   # fork sources only
 gh release create "$tag" --repo "$repo" --title "RX 7900 XTX 64 GB (Strata, ROCm gfx1100) — $tag" \
-  --notes "Strata $(node "$here/profile.js" "$profile" source.strata_version) ($(node "$here/profile.js" "$profile" source.strata_commit)), TheRock $(node "$here/profile.js" "$profile" therock.version). Qualified on RX 7900 XTX 24 GB + 64 GB RAM." \
+  --notes "Strata $(node "$here/profile.js" "$profile" source.strata_version) ($(node "$here/profile.js" "$profile" source.strata_commit)${strata_ref:+, xrigpc/Strata $strata_ref}), TheRock $(node "$here/profile.js" "$profile" therock.version). Qualified on RX 7900 XTX 24 GB + 64 GB RAM." \
   "${assets[@]}" "$runtime/runtime-files.sha256" "$data"/*.files.json "$work/qualification.json" "$work/qualification.json.sig"
 
 mkdir "$work/check"

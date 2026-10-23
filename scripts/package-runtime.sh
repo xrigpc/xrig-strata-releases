@@ -30,7 +30,7 @@ cp -a "$build/engine/strata" "$build/engine/strata-vision" "$rt/strata/engine/"
 cp -a "$build/engine/libgomp.so.1" "$rt/lib/"
 node - "$profile" "$rt/strata/engine/BUILD.json" <<'NODE'
 const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[2]));
-fs.writeFileSync(process.argv[3],JSON.stringify({source:'xrig-strata-releases',backend:'hip',version:p.source.strata_version,archs:[p.platform.gpu_arch],vision:'cpu',strata_commit:p.source.strata_commit,llama_cpp_commit:p.source.llama_cpp_commit,therock:p.therock.version,portable:true},null,1)+'\n');
+fs.writeFileSync(process.argv[3],JSON.stringify({source:'xrig-strata-releases',backend:'hip',version:p.source.strata_version,archs:[p.platform.gpu_arch],vision:'cpu',strata_commit:p.source.strata_commit,...(p.source.strata_ref?{strata_repo:p.source.strata_repo,strata_ref:p.source.strata_ref,expected_tree:p.source.expected_tree}:{}),llama_cpp_commit:p.source.llama_cpp_commit,therock:p.therock.version,portable:true},null,1)+'\n');
 NODE
 cp "$build/build-env.txt" "$rt/strata/engine/BUILD-ENV.txt"
 # Import smoke test: every module the server loads at startup must resolve from the stack alone.

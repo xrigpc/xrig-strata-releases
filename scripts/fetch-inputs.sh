@@ -36,18 +36,30 @@ node -e 'const p=require(require("path").resolve(process.argv[1]));for(const w o
 while read -r name url sha; do fetch "$url" "$cache/wheels/$name" "$sha"; done
 
 commit=$(f source.strata_commit)
+repo=$(f source.strata_repo)
 src="$cache/strata-src"
-if [[ ! -d "$src/.git" ]]; then
-  git init -q "$src"
-  git -C "$src" remote add origin "$(f source.strata_repo)"
-fi
+[[ -d "$src/.git" ]] || git init -q "$src"
+# Every run: a cache made for another profile may point at the other Strata repository.
+git -C "$src" remote add origin "$repo" 2>/dev/null || git -C "$src" remote set-url origin "$repo"
 git -C "$src" fetch -q --depth=1 origin "$commit"
-git -C "$src" checkout -q --detach "$commit"
+# --force: a cache last used for a patched profile has those patches applied and staged.
+git -C "$src" checkout -q --force --detach "$commit"
 git -C "$src" reset -q --hard "$commit"
 git -C "$src" clean -qfdx
 [[ "$(git -C "$src" rev-parse HEAD)" == "$commit" ]] || { echo 'Strata checkout differs from the pin' >&2; exit 1; }
 grep -q "VERSION $(f source.strata_version)" "$src/CMakeLists.txt" || { echo 'Strata version differs from the pin' >&2; exit 1; }
 echo "Strata $commit verified"
+if ref=$(f source.strata_ref); then
+  # Fork source: the commit is the pin; its tree and the tag must agree with the profile.
+  tree=$(git -C "$src" rev-parse 'HEAD^{tree}')
+  [[ "$tree" == "$(f source.expected_tree)" ]] || { echo "Strata tree $tree differs from source.expected_tree" >&2; exit 1; }
+  echo "Strata tree $tree verified"
+  # The fetch above already needs GitHub, so the tag is always checked.
+  tags=$(git ls-remote "$repo" "refs/tags/$ref" "refs/tags/$ref^{}")
+  tagged=$(awk -v r="refs/tags/$ref" '$2 == r "^{}" { p = $1 } $2 == r { l = $1 } END { print (p != "" ? p : l) }' <<< "$tags")
+  [[ "$tagged" == "$commit" ]] || { echo "tag $ref is '${tagged:-missing}' on $repo, not the pinned $commit" >&2; exit 1; }
+  echo "tag $ref verified"
+fi
 patches=$(node -e 'const p=require(require("path").resolve(process.argv[1]));for(const x of (p.source.patches||[]))console.log(x.file,x.sha256)' "$profile")
 if [[ -n "$patches" ]]; then
   while read -r pf psha; do

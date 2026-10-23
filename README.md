@@ -14,7 +14,7 @@ catalogue is always the last write.
 
 | Input | Pin |
 |---|---|
-| Strata | `Niko1221/Strata` `a0116b2782a5…` (v0.1.43.1, MIT) |
+| Strata | 0.1.43.1 lane: `Niko1221/Strata` `a0116b2782a5…` (v0.1.43.1, MIT). 0.1.44.1 lanes: `Niko1221/Strata` `296b59d2f73c…` + `patches/` (shipped), or an engine tag of the fork [`xrigpc/Strata`](https://github.com/xrigpc/Strata) (new engines; see `docs/engine-sources.md`) |
 | ggml / mtmd | llama.cpp `3cf03257f219…` (zip sha256) |
 | ROCm | AMD TheRock `7.10.0a20251120` gfx110X-dgpu tarball (sha256, size) |
 | Python | python-build-standalone CPython 3.12.14 + jinja2, markupsafe, regex, pillow, psutil wheels (sha256) |

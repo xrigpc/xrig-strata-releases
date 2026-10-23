@@ -24,6 +24,21 @@ vision answer, the engine's `(gfx1100)` device line, and the throughput floor
 (mean decode ≥ 60 tok/s, every run ≥ 40, 32K prefill ≥ 1200 tok/s, at 16K,
 32K and 126K context).
 
+### Engine source
+
+A profile pins the Strata source one of two ways (`scripts/source-pin.js`, checked by `profile.js`):
+
+- **Fork tag (new engines):** `strata_repo` `https://github.com/xrigpc/Strata.git`, `strata_ref` an
+  `engine/<strata_version>-<name>` tag, `strata_commit` the commit it names, and `expected_tree` (always). No
+  `patches`: the changes are commits in the fork. `fetch-inputs.sh` fetches the commit, checks it, its tree and the
+  version, and fails if the tag on GitHub is missing or names another commit.
+- **Upstream commit + patch files (the lanes that already shipped):** `strata_repo` `Niko1221/Strata`, the commit,
+  optional `patches` and then `expected_tree`. Kept as is, so what shipped can be rebuilt byte for byte.
+
+Fork-sourced releases record `strata_ref` and `expected_tree` in the stack descriptor's `source` and in
+`engine/BUILD.json`; upstream-sourced ones record exactly what they always did. How to cut a new engine tag:
+[`engine-sources.md`](engine-sources.md).
+
 ## 2. Staging end-to-end (test rig, throwaway key)
 
 ```bash

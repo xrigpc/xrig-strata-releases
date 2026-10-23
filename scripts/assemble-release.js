@@ -57,7 +57,7 @@ const descriptor = {
   files: fileDigests,
   engine: 'strata',
   entrypoint: { args: ['-I', '${STACK_ROOT}/runtime/strata/serve/server.py', '--engine', 'strata'], working_dir: '${STACK_ROOT}/runtime/strata' },
-  source: { strata_repo: p.source.strata_repo, strata_commit: p.source.strata_commit, strata_version: p.source.strata_version,
+  source: { ...require('./source-pin').sourceRecord(p.source),
     llama_cpp_commit: p.source.llama_cpp_commit, therock_version: p.therock.version, python_version: p.python.version, build_image: p.build_image },
 };
 
