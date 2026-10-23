@@ -97,3 +97,19 @@ assembles the same configuration as before): `pcie_frac` (0-0.85), `adapt` {`eve
 same ranges as Vertex. Vertex launches them on 0.1.44.1+ stacks only, and 1.1.0-rc.6 and earlier refuse a
 configuration that sets any of them, so they stay off the 0.1.43.1 lane. `engine-config.js` (qualification) does not
 apply them.
+
+`engine_args.env` (`watchdog_s` 60-600, `malloc_arena_max` 1-16, `hsa_userptr_for_paged_mem` 0|1,
+`pinned_staging_only` true) becomes `runtime.strata.env`, which only **schema 4** configurations carry; a profile
+that sets it assembles a schema 4 configuration and catalogue row, one without it schema 3 as before. A schema 4
+revision keeps the configuration's id and is published **beside** the schema 3 row: Vertex 1.1.0-rc.8 and earlier
+skip schema 4 rows and keep the schema 3 revision, newer builds list both, sort them by version and take the highest,
+and the factory default from the newest schema. `scripts/catalogue-merge.js` enforces this:
+- a row replaces only the row of the same id and schema;
+- a schema 4 revision must sort after the id's schema 3 revision;
+- a schema 3 revision must sort before the schema 4 one (an rc.8-only fix), unless `DROP_SCHEMA4_ROW=1` removes the
+  schema 4 row on purpose;
+- per vendor, GPU profile and backend: schemas 1-2 (together) and 3 need exactly one active default, schema 4 at most
+  one, so a non-default schema 4 trial revision may be listed.
+
+Revisions are **date-first** (`2026.10.27-strata-xtx64-…`, enforced by `assemble-config-revision.js`), so string
+order is time order. Never order revisions by a trailing counter alone: `node.10` sorts before `node.9`.
