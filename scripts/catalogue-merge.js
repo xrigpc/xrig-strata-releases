@@ -11,7 +11,8 @@
 // alone: "node.10" sorts before "node.9".
 // Factory defaults per (vendor, gpu_profile, backend, schema group): schemas 1-2 form group 0, schema 3 and later
 // each their own. Groups 0 and 3 need exactly one default while they have active rows; groups 4 and later at most
-// one, so a non-default schema 4 trial revision may be listed.
+// one, so a non-default schema 4 trial revision may be listed. And every (vendor, gpu_profile, backend) with active
+// rows needs at least one default across its groups, so a profile listed only in schema 4 still has one.
 // Usage: catalogue-merge.js OUT EXISTING_OR_EMPTY ROW_FILE  (env DROP_SCHEMA4_ROW=1)
 const fs = require('fs');
 
@@ -43,13 +44,18 @@ function merge(rows, row, { dropSchema4 = false } = {}) {
 }
 
 function check(rows) {
-  const groups = new Map();
+  const groups = new Map(), profiles = new Map();
   for (const r of rows.filter(r => r.is_active)) {
-    const key = [r.vendor, r.gpu_profile || '', r.backend, groupOf(r)].join('\u0000');
+    const profileKey = [r.vendor, r.gpu_profile || '', r.backend].join('\u0000');
+    const key = [profileKey, groupOf(r)].join('\u0000');
     const g = groups.get(key) || { defaults: 0, profile: r.gpu_profile, group: groupOf(r) };
-    if (r.is_factory_default) g.defaults++;
+    const p = profiles.get(profileKey) || { defaults: 0, profile: r.gpu_profile };
+    if (r.is_factory_default) { g.defaults++; p.defaults++; }
     groups.set(key, g);
+    profiles.set(profileKey, p);
   }
+  for (const p of profiles.values())
+    if (p.profile && p.defaults === 0) throw Error(`gpu_profile ${p.profile} has active rows but no factory default in any schema`);
   for (const g of groups.values()) {
     if (g.defaults > 1) throw Error(`gpu_profile ${g.profile} has ${g.defaults} schema group ${g.group} factory defaults; expected at most one`);
     if (g.profile && g.group <= 3 && g.defaults === 0)

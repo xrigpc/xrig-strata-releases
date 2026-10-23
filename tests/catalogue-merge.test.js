@@ -37,6 +37,11 @@ assert.throws(() => merge(both, { ...row('2026.10.25-y', 4), id: 'second' }), /2
 assert.throws(() => merge([], row(v3, 3, { is_factory_default: false })), /no factory default/);
 assert.throws(() => merge([row(v3, 3)], { ...row('2026.10.25-z', 3), id: 'second' }), /2 schema group 3 factory defaults/);
 
+// A profile listed only in schema 4 still needs a default (the profile-level floor).
+const v4only = { ...row('2026.10.25-v4only', 4), id: 'v4only', gpu_profile: 'v4-only-profile', is_factory_default: false };
+assert.throws(() => merge([row(v3, 3)], v4only), /no factory default in any schema/);
+assert.strictEqual(merge([row(v3, 3)], { ...v4only, is_factory_default: true }).length, 2);
+
 // Only schema 3 and 4 rows belong in catalogues/v3.
 assert.throws(() => merge([], row(v3, 2)), /schema 3 or 4/);
 assert.throws(() => merge([], row(v3, 5)), /schema 3 or 4/);
