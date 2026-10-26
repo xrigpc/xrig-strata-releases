@@ -3,7 +3,7 @@
   "lane_id": "rx7900xtx-64g-strata044-fork-a-gfx1100",
   "stack_id": "linux-amd-rx7900xtx-64g-strata-gfx1100",
   "engine": "strata",
-  "label": "RX 7900 XTX 64 GB (Strata 0.1.44.1 + SSD tier + tier fixes + A1 = engine A, fork engine/0.1.44.1-a-rc1, ROCm gfx1100) - CANDIDATE, not for publishing",
+  "label": "RX 7900 XTX 64 GB (Strata 0.1.44.1 + SSD conversation tier + tier fixes, node.3.1, ROCm gfx1100)",
   "platform": {
     "os": "linux",
     "arch": "amd64",
