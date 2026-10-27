@@ -7,7 +7,12 @@
 // URLs are parameters so staging and production publish identical documents
 // apart from where the bytes live.
 //
-// Usage: assemble-release.js --profile P --runtime-dir D --data-dir D --qualification Q
+// Qualification tests the exact documents that ship: `--qualification -` writes
+// only stack.json and config.json for tests/qualify-strata-xtx64.sh, and a
+// qualification file is accepted only for the stack.json and config.json it
+// names by SHA-256, so the release must be assembled with the same inputs.
+//
+// Usage: assemble-release.js --profile P --runtime-dir D --data-dir D --qualification Q|-
 //          --release-tag T --config-revision R --asset-base URL --metadata-base URL
 //          [--therock-url URL] --out DIR
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
@@ -19,8 +24,8 @@ const die = m => { throw new Error(m); };
 const read = f => fs.readFileSync(f, 'utf8');
 const sha = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const p = JSON.parse(read(args.profile));
-const q = JSON.parse(read(args.qualification));
-if (!q.passed || q.gpu_arch !== p.platform.gpu_arch || q.model !== p.model.model_name) die('qualification evidence did not pass for this profile');
+const q = args.qualification === '-' ? null : JSON.parse(read(args.qualification));
+if (q && (!q.passed || q.gpu_arch !== p.platform.gpu_arch || q.model !== p.model.model_name)) die('qualification evidence did not pass for this profile');
 const tag = args['release-tag'], revision = args['config-revision'];
 if (!/^[a-z0-9][a-z0-9._-]{0,95}$/.test(tag) || !/^[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[a-z0-9.-]+$/.test(revision)) die('invalid release tag or config revision');
 const assetBase = args['asset-base'].replace(/\/$/, ''), metaBase = args['metadata-base'].replace(/\/$/, '');
@@ -88,10 +93,19 @@ const config = {
 for (const k of ['pcie_frac', 'adapt', 'draft', 'placement']) if (e[k] !== undefined) config.runtime.strata[k] = e[k];
 if (p.sampling) config.runtime.sampling = p.sampling;
 
+const doc = obj => JSON.stringify(obj, null, 2) + '\n';
+const digest = text => crypto.createHash('sha256').update(text).digest('hex');
+if (q && (q.config_sha256 !== digest(doc(config)) || q.stack_sha256 !== digest(doc(descriptor))))
+  die('qualification evidence is for another config.json or stack.json: qualify these documents, assembled with --qualification -');
+
 fs.mkdirSync(args.out, { recursive: true });
-const write = (name, obj) => fs.writeFileSync(path.join(args.out, name), JSON.stringify(obj, null, 2) + '\n');
+const write = (name, obj) => fs.writeFileSync(path.join(args.out, name), doc(obj));
 write('stack.json', descriptor);
 write('config.json', config);
+if (!q) {
+  console.log(`assembled ${p.stack_id} ${tag} / ${c.id} ${revision} for qualification in ${args.out}`);
+  process.exit(0);
+}
 const configPath = path.join(args.out, 'config.json');
 write('catalogue-row.json', {
   id: c.id, config_version: revision, schema_version: 3, status: c.status, vendor: c.compatibility.vendor,

@@ -85,10 +85,26 @@ for (const [name, edit] of Object.entries(rejected)) if (validates(writeProfile(
       fs.writeFileSync(path.join(data, `test-${role}-x.files.json`), JSON.stringify({ asset_name: asset, size_bytes: bytes.length, files: [],
         sha256: require('crypto').createHash('sha256').update(bytes).digest('hex') }));
     }
-    fs.writeFileSync(path.join(dir, 'q.json'), JSON.stringify({ passed: true, gpu_arch: p.platform.gpu_arch, model: p.model.model_name }));
-    execFileSync('node', ['scripts/assemble-release.js', '--profile', profileFile, '--runtime-dir', rt, '--data-dir', data, '--qualification', path.join(dir, 'q.json'),
-      '--release-tag', 'test-tag', '--config-revision', '2026.01.05-test', '--asset-base', 'https://example.invalid/a', '--metadata-base', 'https://example.invalid/m',
-      '--out', path.join(dir, 'out')], {cwd: root, stdio: 'pipe'});
+    // Qualification tests the documents `--qualification -` assembles; the release accepts evidence only for them.
+    const assembleWith = (q, out) => execFileSync('node', ['scripts/assemble-release.js', '--profile', profileFile, '--runtime-dir', rt, '--data-dir', data,
+      '--qualification', q, '--release-tag', 'test-tag', '--config-revision', '2026.01.05-test', '--asset-base', 'https://example.invalid/a',
+      '--metadata-base', 'https://example.invalid/m', '--out', path.join(dir, out)], {cwd: root, stdio: 'pipe'});
+    assembleWith('-', 'qualify');
+    if (fs.readdirSync(path.join(dir, 'qualify')).sort().join() !== 'config.json,stack.json') fail('assembly for qualification must write only config.json and stack.json');
+    const digest = f => require('crypto').createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+    const evidence = (name, extra) => {
+      const f = path.join(dir, name);
+      fs.writeFileSync(f, JSON.stringify({ passed: true, gpu_arch: p.platform.gpu_arch, model: p.model.model_name,
+        config_sha256: digest(path.join(dir, 'qualify', 'config.json')), stack_sha256: digest(path.join(dir, 'qualify', 'stack.json')), ...extra }));
+      return f;
+    };
+    for (const [name, extra] of [['q-config', { config_sha256: '0'.repeat(64) }], ['q-stack', { stack_sha256: '0'.repeat(64) }], ['q-unbound', { config_sha256: undefined }]]) {
+      let refused = false;
+      try { assembleWith(evidence(name, extra), 'out-' + name); } catch { refused = true; }
+      if (!refused || fs.existsSync(path.join(dir, 'out-' + name))) fail(`qualification evidence ${name} must be refused before anything is written`);
+    }
+    assembleWith(evidence('q.json', {}), 'out');
+    if (digest(path.join(dir, 'out', 'config.json')) !== digest(path.join(dir, 'qualify', 'config.json'))) fail('the release must ship the config.json that was qualified');
     return JSON.parse(fs.readFileSync(path.join(dir, 'out', 'stack.json'))).source;
   };
   const legacy = assembleSource(path.join(root, 'profiles/rx7900xtx-64g-strata044-ssd-gfx1100.json'), 'asm-legacy');

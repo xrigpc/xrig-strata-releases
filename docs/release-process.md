@@ -14,11 +14,39 @@ scripts/build-runtime.sh  $P ~/xrig-dev/build-cache ~/xrig-dev/build-out
 scripts/package-runtime.sh $P ~/xrig-dev/build-cache ~/xrig-dev/build-out $V ~/xrig-dev/pkg-out
 scripts/package-data.sh <pack dir> pack-iq2_xs $V ~/xrig-dev/data-out <frozen sha256sums>
 scripts/package-data.sh <mtp/rt dir> mtp-rt     $V ~/xrig-dev/data-out <frozen sha256sums>
-tests/qualify-strata-xtx64.sh $P <runtime tar.gz> <therock tar.gz> <models> <pack> <mtp> > qualification.json
+# the documents that will ship, with the release's own inputs and production URLs:
+node scripts/assemble-release.js --profile $P --runtime-dir ~/xrig-dev/pkg-out --data-dir ~/xrig-dev/data-out \
+  --qualification - --release-tag <tag> --config-revision <config revision> \
+  --asset-base https://github.com/xrigpc/xrig-strata-releases/releases/download/<tag> \
+  --metadata-base "${SUPABASE_URL%/}/storage/v1/object/public/xrig-configs" --out ~/xrig-dev/qualify-docs   # as release-production.sh
+XRIG_LAUNCH_PLAN=<vertex-launch-plan> \
+  tests/qualify-strata-xtx64.sh $P ~/xrig-dev/qualify-docs <runtime tar.gz> <therock tar.gz> <models> <pack> <mtp> > qualification.json
 ```
 
-Qualification runs the packaged stack exactly as Vertex will (clean
-environment, `python -I`, TheRock libraries only) and requires: health and
+Qualification runs the exact `config.json` and `stack.json` that ship, launched
+by Vertex's own launch code: `vertex-launch-plan` (Vertex's release-side tool,
+built from the Vertex release that will run the configuration) writes the
+command line, environment, engine config, OOM score and runtime unit
+properties the Vertex runtime would use, and the script starts the engine from
+that plan in a transient `systemd-run --user --scope` with those properties
+(`MemorySwapMax=0`). So the Node session settings, the SSD conversation tier,
+the engine environment Vertex adds and the no-swap rule are qualified too.
+The script checks both archives against `stack.json` before unpacking them,
+checks `memory.swap.max` and every process's `oom_score_adj` once the engine
+is up, and fails if any process of the run survives it.
+
+`qualification.json` records the SHA-256 of both documents, the launch
+fingerprint, the tool's SHA-256 and the measured unit properties.
+`assemble-release.js` (and so `release-production.sh`) accepts the evidence
+only for the documents it names: assemble the release with the same profile,
+packages, tag, revision and URLs.
+
+The engine listens on `XRIG_QUALIFY_PORT` (default 18090; 8088, the Vertex
+runtime's port, is refused unless `XRIG_QUALIFY_ALLOW_8088=1`). The work
+directory goes under `XRIG_QUALIFY_TMP` (default `~/.cache/xrig-qualify`); it
+must be on the SSD, as Vertex's state directory is, and tmpfs is refused.
+
+Qualification requires: health and
 `loaded`, the served model id, a text answer with `reasoning_content`, a
 vision answer, the engine's `(gfx1100)` device line, and the throughput floor
 (mean decode ≥ 60 tok/s, every run ≥ 40, 32K prefill ≥ 1200 tok/s, at 16K,
@@ -95,5 +123,4 @@ assembles the same configuration as before): `pcie_frac` (0-0.85), `adapt` {`eve
 0.5-0.999, `async` bool, `min_gain` 0.5-10}, `draft` {`lookup_chain` 0-7, `suffix_draft` 0-8, `mtp_max_t` 0-8} and
 `placement` {`aux_cpus` `off`, `auto` or CPU indices such as `7,8,15`; `pool_workers` 0-64}. `profile.js` checks the
 same ranges as Vertex. Vertex launches them on 0.1.44.1+ stacks only, and 1.1.0-rc.6 and earlier refuse a
-configuration that sets any of them, so they stay off the 0.1.43.1 lane. `engine-config.js` (qualification) does not
-apply them.
+configuration that sets any of them, so they stay off the 0.1.43.1 lane. Qualification launches them as Vertex does.
