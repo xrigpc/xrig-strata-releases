@@ -13,13 +13,15 @@ change**. Each engine we build is an annotated **tag** on it. A profile pins the
 | `engine/0.1.44.1-node.3` | `xrig/v0.1.44-node3` | `b2e90c97cc85` | `0bd8a7d3` | PR #1937 (revision `047192e6`, its author's 14 commits) + the 5 xrig fixes. The same tree as the shipped `ssd-044-v2.patch` profile |
 | `engine/0.1.44.1-node.4` | `xrig/v0.1.44-node4` | `269befc664c5` | `77daafd8` | node.3 + conv-buffer-mmap + tier-fixes-v2 + tier-notice + conv-buffer-pool v3. Not shipped |
 | `engine/0.1.44.1-a-rc1` | `xrig/v0.1.44-a` | `1242d2318b4b` | `b0cc0e47` | node.3 + tier-fixes-v2 + tier-notice + tier-take-bound (A1). Candidate |
+| `engine/0.1.44.1-a2-rc1` | `xrig/v0.1.44-a2` | `3dd82d1f8297` | `985d0e19` | a-rc1 + fix B (stall-report diagnostics, bounded drafter K/V restore, watched adaptive drain, retry before the answer) + drift fix (conv-buffer-mmap, conv-buffer-pool v3, superseded-reuse) + the park check on the full snapshot without the heap trim. Candidate for node.3.2 |
 
 Archive tags: `archive/pr1937-pre-rebase-047192e6`, the PR revision our tier comes from (it is no longer on any
 upstream ref), and `archive/office-prod-316afea9`, the shipped source as one squashed commit (the same tree as
 node.3).
 
-Profiles: `rx7900xtx-64g-strata044-fork-node3-gfx1100.json` and `rx7900xtx-64g-strata044-fork-a-gfx1100.json`,
-both CANDIDATE and not for publishing. `rx7900xtx-64g-strata044-ssd-gfx1100.json`, which shipped, stays on
+Profiles: `rx7900xtx-64g-strata044-fork-node3-gfx1100.json` (CANDIDATE, not for publishing),
+`rx7900xtx-64g-strata044-fork-a-gfx1100.json` (shipped as node.3.1) and `rx7900xtx-64g-strata044-fork-a2-gfx1100.json`
+(engine/0.1.44.1-a2-rc1, the node.3.2 candidate). `rx7900xtx-64g-strata044-ssd-gfx1100.json`, which shipped, stays on
 upstream + `patches/ssd-044-v2.patch`.
 
 ## Cutting a new engine

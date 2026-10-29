@@ -48,7 +48,8 @@ for (const [name, edit] of Object.entries(rejected)) if (validates(writeProfile(
 // Source pins: upstream Strata at a commit (+ patches), or an engine tag of the xrigpc/Strata fork (no patches, tree
 // always). A release records upstream sources exactly as before, fork sources with their tag and tree.
 {
-  const forkFiles = ['profiles/rx7900xtx-64g-strata044-fork-node3-gfx1100.json', 'profiles/rx7900xtx-64g-strata044-fork-a-gfx1100.json'];
+  const forkFiles = ['profiles/rx7900xtx-64g-strata044-fork-node3-gfx1100.json', 'profiles/rx7900xtx-64g-strata044-fork-a-gfx1100.json',
+    'profiles/rx7900xtx-64g-strata044-fork-a2-gfx1100.json'];
   for (const f of forkFiles) if (!validates(path.join(root, f))) fail(`${f} must validate`);
   const fork = JSON.parse(fs.readFileSync(path.join(root, forkFiles[1])));
   const sourceProfile = (name, from, edit) => {
