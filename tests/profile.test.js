@@ -117,4 +117,6 @@ if (JSON.stringify(rest) !== JSON.stringify(plain) || JSON.stringify({pcie_frac,
 fs.rmSync(tmp, { recursive: true, force: true });
 const publisher = fs.readFileSync(path.join(root, 'scripts/publish-supabase.sh'), 'utf8');
 if (/catalogues\/v2|stacks\/v1/.test(publisher.replace(/^#.*$/mg, ''))) fail('publisher must never write v1/v2 feeds read by older Vertex builds');
+if (publisher.replace(/^#.*$/mg, '').replace(/\\\n/g, ' ').split('\n').some(l => /\bcurl\b/.test(l) && /SERVICE_ROLE_KEY/.test(l)))
+  fail("publisher must not put the service-role key on curl's argv");
 console.log('profile contract passed');
