@@ -8,12 +8,21 @@
 # Usage: publish-supabase.sh TREE_DIR [--dry-run]
 # Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, XRIG_ED25519_PUBLIC_KEY_B64
 set -euo pipefail
+{ set +x; } 2>/dev/null   # never trace: the key check below and the header file would print the service-role key
 tree=$(realpath "${1:?usage: publish-supabase.sh TREE_DIR [--dry-run]}"); dry=${2:-}
 here=$(cd "$(dirname "$0")" && pwd)
 [[ -n ${SUPABASE_URL:-} && -n ${XRIG_ED25519_PUBLIC_KEY_B64:-} ]] || { echo 'SUPABASE_URL and XRIG_ED25519_PUBLIC_KEY_B64 are required' >&2; exit 2; }
 [[ "$dry" == --dry-run || -n ${SUPABASE_SERVICE_ROLE_KEY:-} ]] || { echo 'SUPABASE_SERVICE_ROLE_KEY is required' >&2; exit 2; }
 base="${SUPABASE_URL%/}/storage/v1/object/xrig-configs"; public="${SUPABASE_URL%/}/storage/v1/object/public/xrig-configs"
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+# The service-role key reaches curl through a 0600 header file in the 0700 work directory, never on curl's argv, where
+# any process on the machine could read it from /proc/PID/cmdline while an upload runs.  printf is a shell builtin, and
+# the key is no longer exported, so curl does not inherit it either.  A SIGKILL or power cut skips the trap and leaves
+# the header file under /tmp until the system's tmp cleanup removes it.
+if [[ "$dry" != --dry-run ]]; then
+  (umask 077; printf 'Authorization: Bearer %s\napikey: %s\n' "$SUPABASE_SERVICE_ROLE_KEY" "$SUPABASE_SERVICE_ROLE_KEY" > "$work/auth-headers")
+  export -n SUPABASE_SERVICE_ROLE_KEY
+fi
 
 # Every signed document must verify with the production public key before upload.
 while IFS= read -r sig; do
@@ -24,8 +33,8 @@ put() { # OBJECT FILE MODE(immutable|upsert)
   local object=$1 file=$2 mode=$3 status
   if [[ "$dry" == --dry-run ]]; then echo "would $mode $object ($(stat -c %s "$file") bytes)"; return 0; fi
   local upsert=false; [[ "$mode" == upsert ]] && upsert=true
-  status=$(curl -sS -o "$work/response" -w '%{http_code}' -X POST -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "x-upsert: $upsert" -H 'content-type: application/json' --data-binary @"$file" "$base/$object")
+  status=$(curl -sS -o "$work/response" -w '%{http_code}' -X POST -H @"$work/auth-headers" \
+    -H "x-upsert: $upsert" -H 'content-type: application/json' --data-binary @"$file" "$base/$object")
   [[ "$status" =~ ^2 ]] && { echo "$mode $object"; return 0; }
   if [[ "$mode" == immutable ]]; then
     # A previous interrupted run may have created it: resume only on identical bytes.
