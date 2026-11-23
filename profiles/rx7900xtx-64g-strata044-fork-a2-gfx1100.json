@@ -3,7 +3,7 @@
   "lane_id": "rx7900xtx-64g-strata044-fork-a2-gfx1100",
   "stack_id": "linux-amd-rx7900xtx-64g-strata-gfx1100",
   "engine": "strata",
-  "label": "RX 7900 XTX 64 GB (Strata 0.1.44.1 + SSD conversation tier + tier fixes + stall and memory fixes, node.3.2, ROCm gfx1100)",
+  "label": "RX 7900 XTX 64 GB (Strata 0.1.44.1 + SSD conversation tier + tier fixes + stall and memory fixes + restart gate, node.3.2.1, ROCm gfx1100)",
   "platform": {
     "os": "linux",
     "arch": "amd64",
@@ -12,14 +12,14 @@
   "build_image": "docker.io/library/ubuntu:24.04@sha256:f610ab94648195aa356059f5b41d6085c9d4d903c072430cdd1af7bdb646106b",
   "source": {
     "strata_repo": "https://github.com/xrigpc/Strata.git",
-    "strata_ref": "engine/0.1.44.1-a2-rc1",
-    "strata_commit": "3dd82d1f8297a7338db4a9a2546e1e9292e7c2ec",
+    "strata_ref": "engine/0.1.44.1-a2-rc2",
+    "strata_commit": "cfb5f8dcdeff019e12dedaadaec634299f0648e7",
     "strata_version": "0.1.44.1",
     "llama_cpp_commit": "3cf03257f219afbe7334045ff7c6a06ac68c627d",
     "llama_cpp_zip_url": "https://github.com/ggml-org/llama.cpp/archive/3cf03257f219afbe7334045ff7c6a06ac68c627d.zip",
     "llama_cpp_zip_sha256": "cbe23c594282ead2937abb3f008e51fcec4609d9256652fff42c7cc1c21ea47b",
     "llama_cpp_zip_size_bytes": 39564399,
-    "expected_tree": "985d0e191e7c8c8f7d2cf2c03ed54a709cce3c53"
+    "expected_tree": "e59d8ce8028485720f1a329b6afb90753a954c9a"
   },
   "therock": {
     "version": "7.10.0a20251120",
